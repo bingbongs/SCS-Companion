@@ -1,6 +1,6 @@
 # SCS Companion
 
-![SCS Companion in Mouse mode](docs/images/scs-companion-default.png)
+![SCS Companion in Mouse mode](Docs/images/scs-companion-default.png)
 
 SCS Companion gives the discontinued Stanton SCS.3d / DaScratch a new life as a lightweight, standalone Windows control surface. It connects directly to the controller's standard MIDI endpoints, translates its controls into useful desktop actions, and drives its red, blue, and purple LEDs—no DaRouter installation required.
 
@@ -47,15 +47,15 @@ The main faceplate follows the physical controller so MIDI input is immediately 
 
 | Default faceplate | General settings |
 | --- | --- |
-| ![Default Mouse mode](docs/images/scs-companion-default.png) | ![General settings](docs/images/scs-companion-general-settings.png) |
+| ![Default Mouse mode](Docs/images/scs-companion-default.png) | ![General settings](Docs/images/scs-companion-general-settings.png) |
 
 | Module assignments | About and credits |
 | --- | --- |
-| ![Module settings](docs/images/scs-companion-modules-settings.png) | ![About settings](docs/images/scs-companion-about-settings.png) |
+| ![Module settings](Docs/images/scs-companion-modules-settings.png) | ![About settings](Docs/images/scs-companion-about-settings.png) |
 
 | Mouse settings | DJ integrations |
 | --- | --- |
-| ![Mouse settings](docs/images/scs-companion-mouse-settings.png) | ![DJ settings](docs/images/scs-companion-dj-settings.png) |
+| ![Mouse settings](Docs/images/scs-companion-mouse-settings.png) | ![DJ settings](Docs/images/scs-companion-dj-settings.png) |
 
 ## Requirements
 
