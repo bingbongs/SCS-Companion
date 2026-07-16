@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper device="SCSCOMPANIONDJ" author="SCS Companion" version="800" date="14/07/2026">
+  <map value="PLAY" action="play_pause" />
+  <map value="CUE" action="cue_stop" />
+  <map value="SYNC" action="sync" />
+  <map value="TAP" action="beat_tap" />
+
+  <map value="KEY_LOCK" action="key_lock" />
+  <map value="QUANTIZE" action="quantize_all" />
+  <map value="SLIP" action="slip_mode" />
+  <map value="CENSOR" action="dump while_pressed" />
+
+  <map value="BEATJUMP_FORWARD" action="beatjump +1" />
+  <map value="BEATJUMP_BACKWARD" action="beatjump -1" />
+
+  <map value="GAIN" action="gain" />
+  <map value="PITCH" action="pitch_slider" />
+  <map value="VOLUME" action="volume" />
+</mapper>

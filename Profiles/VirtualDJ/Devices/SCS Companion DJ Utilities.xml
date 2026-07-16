@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<device name="SCSCOMPANIONDJ" author="SCS Companion" description="SCS Companion DJ Utilities" version="800" type="MIDI" drivername="From SCS.3 DaRouter" drivernameout="To SCS.3 DaRouter" decks="1" singledeck="yes">
+  <button note="0x10" name="PLAY" channel="15" />
+  <button note="0x11" name="CUE" channel="15" />
+  <button note="0x12" name="SYNC" channel="15" />
+  <button note="0x13" name="TAP" channel="15" />
+
+  <button note="0x20" name="KEY_LOCK" channel="15" />
+  <button note="0x21" name="QUANTIZE" channel="15" />
+  <button note="0x22" name="SLIP" channel="15" />
+  <button note="0x23" name="CENSOR" channel="15" />
+
+  <button note="0x30" name="BEATJUMP_FORWARD" channel="15" />
+  <button note="0x31" name="BEATJUMP_BACKWARD" channel="15" />
+
+  <slider cc="0x28" name="GAIN" channel="15" ghost="false" />
+  <slider cc="0x29" name="PITCH" channel="15" ghost="false" />
+  <slider cc="0x2A" name="VOLUME" channel="15" ghost="false" />
+</device>

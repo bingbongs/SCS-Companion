@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SCSCompanion (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "SCSCompanion (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

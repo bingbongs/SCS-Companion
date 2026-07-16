@@ -1,0 +1,16 @@
+bin/
+obj/
+AppPackages/
+artifacts/
+.vs/
+*.user
+*.suo
+*.pfx
+*.cer
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.zip
+*.exe
+last-crash.txt

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MixxxMIDIPreset schemaVersion="1" mixxxVersion="2.5.0+">
+  <info>
+    <name>SCS Companion DJ Utilities</name>
+    <author>SCS Companion</author>
+    <description>One-deck utility mapping for the SCS Companion virtual MIDI output on channel 16.</description>
+  </info>
+  <controller id="2 - From SCS.3 DaRouter">
+    <controls>
+      <control><description>Play/Pause</description><group>[Channel1]</group><key>play</key><status>0x9F</status><midino>0x10</midino><options><normal/></options></control>
+      <control><description>Play/Pause release</description><group>[Channel1]</group><key>play</key><status>0x8F</status><midino>0x10</midino><options><normal/></options></control>
+      <control><description>Cue</description><group>[Channel1]</group><key>cue_default</key><status>0x9F</status><midino>0x11</midino><options><normal/></options></control>
+      <control><description>Cue release</description><group>[Channel1]</group><key>cue_default</key><status>0x8F</status><midino>0x11</midino><options><normal/></options></control>
+      <control><description>Sync</description><group>[Channel1]</group><key>sync_enabled</key><status>0x9F</status><midino>0x12</midino><options><normal/></options></control>
+      <control><description>Sync release</description><group>[Channel1]</group><key>sync_enabled</key><status>0x8F</status><midino>0x12</midino><options><normal/></options></control>
+      <control><description>Tap tempo</description><group>[Channel1]</group><key>bpm_tap</key><status>0x9F</status><midino>0x13</midino><options><normal/></options></control>
+      <control><description>Tap tempo release</description><group>[Channel1]</group><key>bpm_tap</key><status>0x8F</status><midino>0x13</midino><options><normal/></options></control>
+
+      <control><description>Keylock</description><group>[Channel1]</group><key>keylock</key><status>0x9F</status><midino>0x20</midino><options><normal/></options></control>
+      <control><description>Keylock release</description><group>[Channel1]</group><key>keylock</key><status>0x8F</status><midino>0x20</midino><options><normal/></options></control>
+      <control><description>Quantize</description><group>[Channel1]</group><key>quantize</key><status>0x9F</status><midino>0x21</midino><options><normal/></options></control>
+      <control><description>Quantize release</description><group>[Channel1]</group><key>quantize</key><status>0x8F</status><midino>0x21</midino><options><normal/></options></control>
+      <control><description>Slip</description><group>[Channel1]</group><key>slip_enabled</key><status>0x9F</status><midino>0x22</midino><options><normal/></options></control>
+      <control><description>Slip release</description><group>[Channel1]</group><key>slip_enabled</key><status>0x8F</status><midino>0x22</midino><options><normal/></options></control>
+      <control><description>Reverse roll</description><group>[Channel1]</group><key>reverseroll</key><status>0x9F</status><midino>0x23</midino><options><normal/></options></control>
+      <control><description>Reverse roll release</description><group>[Channel1]</group><key>reverseroll</key><status>0x8F</status><midino>0x23</midino><options><normal/></options></control>
+
+      <control><description>Beatjump forward</description><group>[Channel1]</group><key>beatjump_1_forward</key><status>0x9F</status><midino>0x30</midino><options><normal/></options></control>
+      <control><description>Beatjump backward</description><group>[Channel1]</group><key>beatjump_1_backward</key><status>0x9F</status><midino>0x31</midino><options><normal/></options></control>
+
+      <control><description>Pregain</description><group>[Channel1]</group><key>pregain</key><status>0xBF</status><midino>0x28</midino><options><normal/></options></control>
+      <control><description>Tempo</description><group>[Channel1]</group><key>rate</key><status>0xBF</status><midino>0x29</midino><options><normal/></options></control>
+      <control><description>Channel volume</description><group>[Channel1]</group><key>volume</key><status>0xBF</status><midino>0x2A</midino><options><normal/></options></control>
+    </controls>
+  </controller>
+</MixxxMIDIPreset>

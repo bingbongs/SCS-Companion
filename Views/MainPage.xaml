@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Page
+    x:Class="SCSCompanion.Views.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{StaticResource DeviceWindowBrush}"
+    RequestedTheme="Dark">
+
+    <Border Margin="3" Background="{StaticResource DeviceFaceBrush}" BorderBrush="{StaticResource DeviceBorderBrush}" BorderThickness="2" CornerRadius="18">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="34" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="24" />
+            </Grid.RowDefinitions>
+
+            <Grid x:Name="TitleBarDragRegion" x:FieldModifier="public" Padding="9,0,136,0" Background="{StaticResource DeviceTitleBrush}" CornerRadius="16,16,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE7F8;" FontSize="14" Foreground="{StaticResource StantonCyanBrush}" />
+                    <TextBlock Text="SCS COMPANION" FontSize="10" FontWeight="SemiBold" CharacterSpacing="45" VerticalAlignment="Center" />
+                    <Button x:Name="SettingsButton" Padding="5,1" Background="Transparent" AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings">
+                        <Button.Content><FontIcon Glyph="&#xE713;" FontSize="12" /></Button.Content>
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <TabView Width="340" Height="600" IsAddTabButtonVisible="False" TabWidthMode="SizeToContent">
+                                    <TabViewItem Header="General" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="14" Padding="2,6,8,12">
+                                                <TextBlock Text="GENERAL" FontSize="14" FontWeight="SemiBold" CharacterSpacing="65" />
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="Default audio output" FontSize="12" FontWeight="SemiBold" />
+                                                    <ComboBox x:Name="OutputDeviceComboBox" HorizontalAlignment="Stretch" SelectionChanged="OnAudioDeviceSelectionChanged" AutomationProperties.Name="Looper audio output" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="Default microphone" FontSize="12" FontWeight="SemiBold" />
+                                                    <ComboBox x:Name="InputDeviceComboBox" HorizontalAlignment="Stretch" SelectionChanged="OnAudioDeviceSelectionChanged" AutomationProperties.Name="Looper microphone input" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="External sync correction" FontSize="12" FontWeight="SemiBold" />
+                                                    <NumberBox x:Name="SyncCompensationNumberBox" Minimum="-250" Maximum="250" SmallChange="5" SpinButtonPlacementMode="Inline" ValueChanged="OnSyncCompensationChanged" AutomationProperties.Name="Looper synchronization correction in milliseconds" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="Theme" FontSize="12" FontWeight="SemiBold" />
+                                                    <ComboBox x:Name="ThemeComboBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Application theme">
+                                                        <ComboBoxItem Content="Stanton default" Tag="Stanton" /><ComboBoxItem Content="Light" Tag="Light" /><ComboBoxItem Content="High contrast" Tag="Contrast" /><ComboBoxItem Content="Ultraviolet" Tag="Ultraviolet" /><ComboBoxItem Content="Ice" Tag="Ice" />
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <TextBlock x:Name="VrChatOscStatusText" Text="Ready · 127.0.0.1:9000" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
+                                    <TabViewItem Header="Modules" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="10" Padding="2,6,8,12">
+                                            <TextBlock Text="MODULE SLOTS" FontSize="13" FontWeight="SemiBold" CharacterSpacing="55" />
+                                            <StackPanel Spacing="3"><TextBlock Text="FX" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="FxModuleComboBox" Tag="32" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="FX module" /></StackPanel>
+                                            <StackPanel Spacing="3"><TextBlock Text="LOOP" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="LoopModuleComboBox" Tag="34" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="LOOP module" /></StackPanel>
+                                            <StackPanel Spacing="3"><TextBlock Text="VINYL" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="VinylModuleComboBox" Tag="36" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="VINYL module" /></StackPanel>
+                                            <StackPanel Spacing="3"><TextBlock Text="EQ" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="EqModuleComboBox" Tag="38" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="EQ module" /></StackPanel>
+                                            <StackPanel Spacing="3"><TextBlock Text="TRIG" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="TrigModuleComboBox" Tag="40" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="TRIG module" /></StackPanel>
+                                            <StackPanel Spacing="3"><TextBlock Text="DECK" FontSize="11" FontWeight="SemiBold" /><ComboBox x:Name="DeckModuleComboBox" Tag="42" HorizontalAlignment="Stretch" SelectionChanged="OnModuleAssignmentChanged" AutomationProperties.Name="DECK module" /></StackPanel>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
+                                    <TabViewItem Header="Mouse" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="14" Padding="2,6,8,12">
+                                                <TextBlock Text="MOUSE" FontSize="14" FontWeight="SemiBold" CharacterSpacing="65" />
+                                                <StackPanel Spacing="5">
+                                                    <Grid>
+                                                        <TextBlock Text="Pointer sensitivity" FontSize="12" FontWeight="SemiBold" />
+                                                        <TextBlock x:Name="SensitivityValueText" Text="100%" FontSize="11" HorizontalAlignment="Right" Foreground="{StaticResource StantonCyanBrush}" />
+                                                    </Grid>
+                                                    <Slider x:Name="SensitivitySlider" Minimum="0.5" Maximum="2.0" Value="1.0" StepFrequency="0.05" AutomationProperties.Name="Pointer sensitivity" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
+                                    <TabViewItem Header="DJ" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="15" Padding="2,6,8,12">
+                                                <TextBlock Text="DJ INTEGRATIONS" FontSize="14" FontWeight="SemiBold" CharacterSpacing="55" />
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="MIXXX SETUP" FontSize="12" FontWeight="SemiBold" />
+                                                    <TextBlock x:Name="MixxxSetupStatusText" Text="Checking Mixxx profile…" TextWrapping="Wrap" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+                                                    <Button x:Name="MixxxInstallButton" Content="Install / repair profile" Click="OnMixxxInstallClicked" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" FontSize="10" AutomationProperties.Name="Install or repair Mixxx controller profile" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="VIRTUALDJ SETUP" FontSize="12" FontWeight="SemiBold" />
+                                                    <TextBlock x:Name="VirtualDjSetupStatusText" Text="Checking VirtualDJ profile…" TextWrapping="Wrap" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+                                                    <Button x:Name="VirtualDjInstallButton" Content="Install / repair profile" Click="OnVirtualDjInstallClicked" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" FontSize="10" AutomationProperties.Name="Install or repair VirtualDJ controller profile" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
+                                    <TabViewItem Header="About" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="12" Padding="2,6,8,12">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="SCS COMPANION" FontSize="14" FontWeight="SemiBold" CharacterSpacing="55" />
+                                                    <TextBlock Text="Version 1.0.0" FontSize="11" Foreground="{StaticResource StantonCyanBrush}" />
+                                                </StackPanel>
+                                                <TextBlock Text="Vibe-coded entirely by a semi-truck driver and GPT-5.6 Sol." TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" />
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="CREDITS" FontSize="12" FontWeight="SemiBold" />
+                                                    <TextBlock Text="Stanton Magnetics and the original SCS.3d / DaScratch and DaRouter teams." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="Sean M. Pappalardo (Pegasus-RPG), original Mixxx SCS.3d mapping author; Christian (git-developer), Swiftb0y, Jan Holthuis (Holzhaus), Owen Williams (ywwg), and the Mixxx contributors who maintained it." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="ritola, creator of Oneten Router, for independent SCS.3d router research." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="Neil Thapen for Pink Trombone; Korg for the KAOSSILATOR performance concept." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="Mark Heath and NAudio contributors; Microsoft WinUI and Windows App SDK contributors." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="The VRChat OSC, Audacity, Discord, Mixxx, and VirtualDJ teams and communities." TextWrapping="Wrap" FontSize="10" />
+                                                    <TextBlock Text="OpenAI and GPT-5.6 Sol for implementation collaboration." TextWrapping="Wrap" FontSize="10" />
+                                                </StackPanel>
+                                                <TextBlock Text="Independent community software. Not affiliated with or endorsed by Stanton, Gibson, Korg, Mixxx, VRChat, Discord, Audacity, or VirtualDJ. Product names are property of their respective owners." TextWrapping="Wrap" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
+                                </TabView>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Ellipse x:Name="ConnectionDot" Width="6" Height="6" Fill="{ThemeResource TextFillColorTertiaryBrush}" />
+                    <TextBlock x:Name="ConnectionText" Text="Finding SCS.3d…" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="10,7,10,7">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="153" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="43" />
+                </Grid.RowDefinitions>
+
+                <!-- Upper panel: the photograph's two side touch strips flank a 2×3 mode bank. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="105" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="105" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Margin="2,0,0,0">
+                        <Grid.RowDefinitions><RowDefinition Height="19" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5">
+                            <Ellipse x:Name="GainHeaderDot" Width="7" Height="7" Fill="{StaticResource StantonBlueBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="GainHeaderText" Text="GAIN" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Grid Grid.Row="1" HorizontalAlignment="Center">
+                            <Border x:Name="GainStrip" Width="50" Height="126" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#90299BFF" BorderThickness="1" CornerRadius="11">
+                                <Grid Margin="8">
+                                    <Rectangle Fill="#25299BFF" RadiusX="5" RadiusY="5" />
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="5">
+                                        <Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" />
+                                        <Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" />
+                                        <Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" /><Ellipse Width="3" Height="3" Fill="#A5299BFF" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <StackPanel x:Name="GainMeterLeds" HorizontalAlignment="Right" Margin="61,6,0,6" VerticalAlignment="Center" Spacing="5">
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+
+                    <Grid Grid.Column="1" Width="196" HorizontalAlignment="Center">
+                        <Grid.RowDefinitions><RowDefinition Height="25" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <TextBlock Text="stanton" HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold" CharacterSpacing="20" />
+                        <Grid Grid.Row="1" RowSpacing="5" ColumnSpacing="8" Margin="0,2,0,0">
+                            <Grid.RowDefinitions><RowDefinition Height="36" /><RowDefinition Height="36" /><RowDefinition Height="36" /></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <ToggleButton x:Name="DjModeButton" Tag="DJ" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="FX hardware button, DJ mode"><StackPanel Spacing="0"><TextBlock Text="FX" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="DjFunctionText" Text="DJ" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                            <ToggleButton x:Name="MediaModeButton" Grid.Column="1" Tag="Media" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="EQ hardware button, Media mode"><StackPanel Spacing="0"><TextBlock Text="EQ" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="MediaFunctionText" Text="MEDIA" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                            <ToggleButton x:Name="ProductivityModeButton" Grid.Row="1" Tag="Productivity" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="Loop hardware button, Productivity mode"><StackPanel Spacing="0"><TextBlock Text="LOOP" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="ProductivityFunctionText" Text="PROD" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                            <ToggleButton x:Name="VrChatModeButton" Grid.Row="1" Grid.Column="1" Tag="VRChat" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="Trigger hardware button, VRChat mode"><StackPanel Spacing="0"><TextBlock Text="TRIG" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="VrChatFunctionText" Text="VRCHAT" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                            <ToggleButton x:Name="MouseModeButton" Grid.Row="2" Tag="Mouse" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="Vinyl hardware button, Mouse mode"><StackPanel Spacing="0"><TextBlock Text="VINYL" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="MouseFunctionText" Text="MOUSE" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                            <ToggleButton x:Name="CustomModeButton" Grid.Row="2" Grid.Column="1" Tag="Custom" Click="OnModeClicked" Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="Deck hardware button, Custom mode"><StackPanel Spacing="0"><TextBlock Text="DECK" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" /><TextBlock x:Name="CustomFunctionText" Text="CUSTOM" FontSize="6" CharacterSpacing="70" HorizontalAlignment="Center" Opacity="0.75" /></StackPanel></ToggleButton>
+                        </Grid>
+                    </Grid>
+
+                    <Grid Grid.Column="2" Margin="0,0,2,0">
+                        <Grid.RowDefinitions><RowDefinition Height="19" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5">
+                            <Ellipse x:Name="PitchHeaderDot" Width="7" Height="7" Fill="{StaticResource StantonRedBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PitchHeaderText" Text="PITCH" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Grid Grid.Row="1" HorizontalAlignment="Center">
+                            <StackPanel x:Name="PitchMeterLeds" HorizontalAlignment="Left" Margin="0,6,61,6" VerticalAlignment="Center" Spacing="5">
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                            </StackPanel>
+                            <Border x:Name="PitchStrip" Width="50" Height="126" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#90FF535C" BorderThickness="1" CornerRadius="11">
+                                <Grid Margin="8">
+                                    <Rectangle Fill="#25FF535C" RadiusX="5" RadiusY="5" />
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="5">
+                                        <Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" />
+                                        <Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" />
+                                        <Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" /><Ellipse Width="3" Height="3" Fill="#A5FF535C" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Grid>
+
+                <!-- Main surface with the four round soft controls in their photographed positions. -->
+                <Grid Grid.Row="1" Width="408" Height="392" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Ellipse x:Name="SurfaceRing" Width="350" Height="350" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="{StaticResource DeviceSurfaceBrush}" Stroke="{StaticResource DeviceBorderBrush}" StrokeThickness="3" />
+                    <Canvas x:Name="RingLedCanvas" Width="350" Height="350" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <Ellipse Width="330" Height="330" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="#3542D6DC" StrokeThickness="1" />
+                    <Rectangle Width="330" Height="1" Fill="#30525A64" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Rectangle Width="1" Height="330" Fill="#30525A64" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Rectangle x:Name="CenterStrip" Width="76" Height="268" RadiusX="9" RadiusY="9" Fill="#1FFF535C" Stroke="#65FF535C" StrokeThickness="1" />
+                    <StackPanel x:Name="CenterMeterLeds" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="11">
+                        <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="5" Height="5" Fill="{StaticResource StantonRedBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="LeftFxTrackLeds" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="86,0,0,0" Spacing="10">
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="RightFxTrackLeds" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,86,0" Spacing="10">
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                        <Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" /><Ellipse Width="4" Height="4" Fill="{StaticResource StantonRedBrush}" />
+                    </StackPanel>
+                    <TextBlock x:Name="Track1FxLabel" Text="T1 FX" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="93,78,0,0" FontSize="6" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="Track2FxLabel" Text="T2 FX" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="93,0,0,78" FontSize="6" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="Track3FxLabel" Text="T3 FX" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,78,93,0" FontSize="6" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="Track4FxLabel" Text="T4 FX" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,93,78" FontSize="6" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="EffectTopLabel" Text="STUTTER" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,35,0,0" FontSize="7" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="EffectRightLabel" Text="REVERSE" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,36,0" FontSize="7" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="EffectBottomLabel" Text="HALF" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,35" FontSize="7" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <TextBlock x:Name="EffectLeftLabel" Text="GATE" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="36,0,0,0" FontSize="7" Foreground="{StaticResource StantonCyanBrush}" IsHitTestVisible="False" />
+                    <Border x:Name="SoftButton1" Width="51" Height="51" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,16,0,0" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#A5299BFF" BorderThickness="2" CornerRadius="26"><TextBlock x:Name="SoftButton1Text" Text="B11" TextWrapping="Wrap" TextAlignment="Center" FontSize="7" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <Border x:Name="SoftButton2" Width="51" Height="51" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,12,0" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#A5299BFF" BorderThickness="2" CornerRadius="26"><TextBlock x:Name="SoftButton2Text" Text="B12" TextWrapping="Wrap" TextAlignment="Center" FontSize="7" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <Border x:Name="SoftButton3" Width="51" Height="51" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,16" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#A5299BFF" BorderThickness="2" CornerRadius="26"><TextBlock x:Name="SoftButton3Text" Text="B13" TextWrapping="Wrap" TextAlignment="Center" FontSize="7" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <Border x:Name="SoftButton4" Width="51" Height="51" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,12,16" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#A5299BFF" BorderThickness="2" CornerRadius="26"><TextBlock x:Name="SoftButton4Text" Text="B14" TextWrapping="Wrap" TextAlignment="Center" FontSize="7" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="SurfaceTitleText" Text="STANTOUCH" HorizontalAlignment="Center" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource StantonCyanBrush}" />
+                        <TextBlock x:Name="LastTouchedText" Text="WAITING FOR INPUT" HorizontalAlignment="Center" FontSize="7" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" MaxWidth="118" />
+                    </StackPanel>
+                    <Border x:Name="KaossDropTarget" Visibility="Collapsed" Width="142" Height="48" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,78,0,0"
+                            AllowDrop="True" DragOver="OnKaossDragOver" Drop="OnKaossDrop" Background="#D0180B20" BorderBrush="{StaticResource StantonPurpleBrush}" BorderThickness="1" CornerRadius="7" Padding="5">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="DROP SAMPLE" FontSize="8" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{StaticResource StantonCyanBrush}" />
+                            <TextBlock x:Name="KaossSampleText" Text="MP3 · WAV · FLAC · OGG" FontSize="6" TextTrimming="CharacterEllipsis" MaxWidth="128" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="GameStatusOverlay" Visibility="Collapsed" Width="142" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#D0081014" BorderBrush="{StaticResource StantonCyanBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
+                        <StackPanel>
+                            <TextBlock x:Name="GameStatusText" Text="PRESS START" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" />
+                            <TextBlock x:Name="GameScoreText" Text="SCORE 0 · BEST 0" FontSize="7" HorizontalAlignment="Center" Foreground="{StaticResource StantonCyanBrush}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Grid Grid.Row="2" Width="392" HorizontalAlignment="Center" ColumnSpacing="7" Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Border x:Name="PlayButton" Background="#35299BFF" BorderBrush="#80299BFF" BorderThickness="1" CornerRadius="5" Padding="5"><TextBlock x:Name="PlayButtonText" Text="PLAY" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource StantonBlueBrush}" HorizontalAlignment="Center" /></Border>
+                    <Border x:Name="CueButton" Grid.Column="1" Background="#35299BFF" BorderBrush="#80299BFF" BorderThickness="1" CornerRadius="5" Padding="5"><TextBlock x:Name="CueButtonText" Text="CUE" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource StantonBlueBrush}" HorizontalAlignment="Center" /></Border>
+                    <Border x:Name="SyncButton" Grid.Column="2" Background="#35299BFF" BorderBrush="#80299BFF" BorderThickness="1" CornerRadius="5" Padding="5"><TextBlock x:Name="SyncButtonText" Text="SYNC" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource StantonBlueBrush}" HorizontalAlignment="Center" /></Border>
+                    <Border x:Name="TapButton" Grid.Column="3" Background="#35299BFF" BorderBrush="#80299BFF" BorderThickness="1" CornerRadius="5" Padding="5"><TextBlock x:Name="TapButtonText" Text="TAP" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource StantonBlueBrush}" HorizontalAlignment="Center" /></Border>
+                </Grid>
+            </Grid>
+
+            <Grid Grid.Row="2" Margin="12,0,12,2">
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Border x:Name="ActiveModeAccent" Width="3" Height="12" Background="{StaticResource StantonBlueBrush}" CornerRadius="2" />
+                    <TextBlock x:Name="ActiveModeText" Text="Mouse · Trackpad" FontSize="9" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ActiveModeDescription" Text="Laptop-style pointer profile" Visibility="Collapsed" />
+                    <TextBlock Text="·" FontSize="9" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                    <Button x:Name="RoutingToggleButton" Click="OnRoutingToggleClicked" Padding="4,0" Background="Transparent" AutomationProperties.Name="Toggle output routing" ToolTipService.ToolTip="Pause or resume active output routing">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Ellipse x:Name="RoutingDot" Width="5" Height="5" Fill="{StaticResource StantonCyanBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="RoutingStateText" Text="MOUSE LIVE" FontSize="8" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock x:Name="StatusText" Text="Ready · outputs paused" FontSize="8" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed" />
+                </StackPanel>
+                <Button HorizontalAlignment="Right" Click="OnPanicClicked" Padding="8,1" Background="#28FF535C" ToolTipService.ToolTip="Safe stop"><TextBlock Text="STOP" FontSize="8" FontWeight="SemiBold" /></Button>
+            </Grid>
+            <InfoBar x:Name="PreviewInfoBar" IsOpen="False" IsClosable="False" Visibility="Collapsed" />
+        </Grid>
+    </Border>
+</Page>
