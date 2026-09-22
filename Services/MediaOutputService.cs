@@ -16,15 +16,18 @@ public sealed class MediaOutputService : IDisposable
     private const ushort VkVolumeDown = 0xAE;
     private const ushort VkVolumeUp = 0xAF;
 
+    private readonly PerAppVolumeService perAppVolume = new();
     private readonly EndpointVolumeController outputVolumeController = new(dataFlow: 0);
     private readonly EndpointVolumeController microphoneVolumeController = new(dataFlow: 1);
 
     public event EventHandler<string>? ActionReported;
     public event EventHandler<bool>? MicrophoneMuteChanged;
 
+    public MediaOutputService() => perAppVolume.ActionReported += (_, action) => ActionReported?.Invoke(this, action);
+
     public bool IsMicrophoneMuted { get; private set; }
 
-    public static bool SupportsSubmode(string submode) => submode is "System" or "Playback" or "Microphone";
+    public static bool SupportsSubmode(string submode) => submode is "System" or "Playback" or "Microphone" or "Per-app mixer";
 
     public void Handle(MidiActivity activity, bool enabled, string submode)
     {
@@ -33,6 +36,7 @@ public sealed class MediaOutputService : IDisposable
             return;
         }
 
+        if (submode == "Per-app mixer") { perAppVolume.Handle(activity); return; }
         if (submode == "Microphone")
         {
             HandleMicrophone(activity);
@@ -135,46 +139,13 @@ public sealed class MediaOutputService : IDisposable
         MicrophoneMuteChanged?.Invoke(this, muted);
     }
 
-    private static bool SendKey(ushort virtualKey)
-    {
-        Input[] inputs =
-        [
-            new() { Type = InputKeyboard, Union = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = virtualKey } } },
-            new() { Type = InputKeyboard, Union = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = virtualKey, Flags = KeyUp } } },
-        ];
-        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) == inputs.Length;
-    }
+    private static bool SendKey(ushort virtualKey) => KeyboardOutput.SendChord(virtualKey);
 
     public void Dispose()
     {
+        perAppVolume.Dispose();
         outputVolumeController.Dispose();
         microphoneVolumeController.Dispose();
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Input
-    {
-        public uint Type;
-        public InputUnion Union;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)] public KeyboardInput Keyboard;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KeyboardInput
-    {
-        public ushort VirtualKey;
-        public ushort ScanCode;
-        public uint Flags;
-        public uint Time;
-        public nint ExtraInfo;
     }
 
     private sealed class EndpointVolumeController(int dataFlow) : IDisposable

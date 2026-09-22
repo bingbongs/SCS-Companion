@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.3.0" />
+    <Compile Include="../Models/MidiActivity.cs" Link="Models/MidiActivity.cs" />
+    <Compile Include="../Services/AudioLooperService.cs" Link="Services/AudioLooperService.cs" />
+    <Compile Include="../Services/KaossPerformanceService.cs" Link="Services/KaossPerformanceService.cs" />
+    <Compile Include="../Services/KeyboardOutput.cs" Link="Services/KeyboardOutput.cs" />
+    <Compile Include="../Services/CustomMappingService.cs" Link="Services/CustomMappingService.cs" />
+    <Compile Include="../Services/MouseTrackpadEngine.cs" Link="Services/MouseTrackpadEngine.cs" />
+    <Compile Include="../Services/MouseOutputService.cs" Link="Services/MouseOutputService.cs" />
+    <Compile Include="../Services/SimonGameService.cs" Link="Services/SimonGameService.cs" />
+  </ItemGroup>
+</Project>

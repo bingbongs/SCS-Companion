@@ -23,9 +23,16 @@ public sealed class AudioLooperService : IDisposable
     private long recordingStartPosition;
     private int selectedTrack;
     private int recordingTrack;
-    private bool recording;
-    private bool finalizing;
-    private bool discardRecording;
+    private volatile bool recording;
+    private volatile bool finalizing;
+    private Task finalizationTask = Task.CompletedTask;
+    private readonly object saveLock = new();
+    private volatile bool disposed;
+    private readonly object deviceLock = new();
+    private bool manualTempo;
+    private double recordingSpeed = 1;
+    private long maximumRecordingBytes;
+    public float InputPeak => mixProvider.InputPeak;
     private bool muteRecordingOnFinalize;
     private bool stopAllRequested;
     private bool automaticStopQueued;
@@ -53,13 +60,13 @@ public sealed class AudioLooperService : IDisposable
     private bool ignoreTransportRelease;
     private int eraseArmedTrack = -1;
 
-    public AudioLooperService(string? inputDeviceId = null, string? outputDeviceId = null, int syncCompensationMs = 0)
+    public AudioLooperService(string? inputDeviceId = null, string? outputDeviceId = null, int syncCompensationMs = 0, string? storageDirectory = null)
     {
         configuredInputDeviceId = inputDeviceId;
         configuredOutputDeviceId = outputDeviceId;
         syncCompensationMilliseconds = Math.Clamp(syncCompensationMs, -250, 250);
         mixProvider = new LoopMixProvider(syncRoot, tracks, () => punchEffect);
-        sessionDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SCSCompanion", "Looper");
+        sessionDirectory = storageDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SCSCompanion", "Looper");
         sessionStatePath = Path.Combine(sessionDirectory, "session.json");
         Directory.CreateDirectory(sessionDirectory);
         LoadSession();
@@ -70,6 +77,7 @@ public sealed class AudioLooperService : IDisposable
     public event EventHandler? StateChanged;
 
     public int SelectedTrack => selectedTrack;
+    public int RecordingTrack => recordingTrack;
     public bool IsRecording => recording;
     public bool IsFinalizing => finalizing;
     public double Bpm => mixProvider.TempoBpm;
@@ -119,10 +127,20 @@ public sealed class AudioLooperService : IDisposable
 
     public void SetActive(bool active)
     {
-        if (!active) ReleaseAll();
+        if (disposed) return;
+        if (!active)
+        {
+            mixProvider.SetActive(false);
+            ReleaseAll();
+            output?.Pause();
+        }
         else
         {
-            try { EnsureOutput(); }
+            try
+            {
+                EnsureOutput();
+                if (liveInputEffect != LiveInputEffect.None) EnsureCapture();
+            }
             catch (Exception exception) { Report($"Looper output unavailable · {exception.Message}"); }
         }
         mixProvider.SetActive(active);
@@ -144,11 +162,7 @@ public sealed class AudioLooperService : IDisposable
 
     public void Handle(MidiActivity activity, bool enabled)
     {
-        if (!enabled)
-        {
-            ReleaseAll();
-            return;
-        }
+        if (!enabled || disposed) return;
 
         if (activity.Kind is "Note on" or "Note off")
         {
@@ -165,8 +179,9 @@ public sealed class AudioLooperService : IDisposable
 
             if (activity.Data1 == 0x01)
             {
+                if (!down && stripActive) ToggleStripFxRoute();
+                if (down) { stripX = 64; stripY = 64; }
                 stripActive = down;
-                if (!down) ToggleStripFxRoute();
                 return;
             }
 
@@ -216,6 +231,9 @@ public sealed class AudioLooperService : IDisposable
         else if (activity.Data1 == 0x03)
         {
             var tempo = 60d + (activity.Data2 / 127d * 120d);
+            if (recording || finalizing) { Report("Finish recording before changing tempo"); return; }
+            manualTempo = true;
+            BpmWasDetected = false;
             mixProvider.SetTempo(tempo);
             Report($"Tempo {mixProvider.TempoBpm:0.0} BPM");
             ScheduleSessionSave();
@@ -230,7 +248,7 @@ public sealed class AudioLooperService : IDisposable
             if (stripX is >= 42 and <= 86)
             {
                 var depth = activity.Data2 / 127f;
-                if (shiftHeld) mixProvider.LiveEffectDepth = depth;
+                if (shiftHeld) { shiftChordUsed = true; mixProvider.LiveEffectDepth = depth; }
                 else mixProvider.EffectDepth = depth;
                 Report(shiftHeld
                     ? $"Live FX depth {mixProvider.LiveEffectDepth * 100:0}%"
@@ -249,6 +267,7 @@ public sealed class AudioLooperService : IDisposable
     {
         lock (syncRoot)
         {
+            if (finalizing && recordingTrack == index) return "FINISHING";
             if (recording && recordingTrack == index) return tracks[index].Samples.Length == 0 ? "RECORDING" : "OVERDUBBING";
             if (tracks[index].Samples.Length == 0) return "EMPTY";
             return tracks[index].Muted ? "STOPPED" : "PLAYING";
@@ -303,6 +322,12 @@ public sealed class AudioLooperService : IDisposable
         }
 
         selectedTrack = trackIndex;
+        if (finalizing && recordingTrack == trackIndex)
+        {
+            ignoreTransportRelease = true;
+            Report("Finishing loop · ready in a moment");
+            return;
+        }
         if (!HasTrackAudio(trackIndex))
         {
             ignoreTransportRelease = true;
@@ -354,9 +379,9 @@ public sealed class AudioLooperService : IDisposable
 
         if (!dubMode)
         {
+            if (!HasTrackAudio(selectedTrack)) { Report($"T{selectedTrack + 1} is empty · record the base loop first"); return; }
             dubMode = true;
-            if (HasTrackAudio(selectedTrack)) ToggleRecording();
-            else Report($"T{selectedTrack + 1} is empty · record the base loop first");
+            ToggleRecording();
         }
         else if (recording)
         {
@@ -381,6 +406,7 @@ public sealed class AudioLooperService : IDisposable
             return;
         }
 
+        if (!shiftHeld) return;
         shiftHeld = false;
         if (!shiftChordUsed)
         {
@@ -397,6 +423,9 @@ public sealed class AudioLooperService : IDisposable
 
     private void TapTempo()
     {
+        if (recording || finalizing) { Report("Finish recording before changing tempo"); return; }
+        manualTempo = true;
+        BpmWasDetected = false;
         try { EnsureOutput(); }
         catch (Exception exception) { Report($"Looper output unavailable · {exception.Message}"); }
         var now = DateTime.UtcNow;
@@ -412,6 +441,7 @@ public sealed class AudioLooperService : IDisposable
         }
         mixProvider.AlignBeatToTap(OutputBufferMilliseconds + syncCompensationMilliseconds);
         Report($"Tap · {mixProvider.TempoBpm:0.0} BPM");
+        ScheduleSessionSave();
     }
 
     private void ToggleStripFxRoute()
@@ -471,14 +501,20 @@ public sealed class AudioLooperService : IDisposable
         {
             EnsureOutput();
             EnsureCapture();
+            // Allocate before taking the mixer lock.
+            var maximumBytes = (long)(captureFormat!.SampleRate * (MaximumSteps * 15d / mixProvider.TempoBpm)) * captureFormat.BlockAlign;
+            maximumBytes = Math.Min(maximumBytes, 128L * 1024 * 1024);
+            maximumBytes -= maximumBytes % captureFormat.BlockAlign;
+            var stream = new MemoryStream((int)maximumBytes);
             lock (syncRoot)
             {
-                recordingBytes = new MemoryStream();
+                maximumRecordingBytes = maximumBytes;
+                recordingBytes = stream;
                 recordingFormat = captureFormat;
                 recordingTrack = selectedTrack;
-                recordingStartPosition = mixProvider.Position;
+                recordingSpeed = mixProvider.TempoBpm / mixProvider.ReferenceBpm;
+                recordingStartPosition = Math.Max(0, mixProvider.Position - (long)(SampleRate * OutputBufferMilliseconds / 1000d * recordingSpeed));
                 recording = true;
-                discardRecording = false;
                 muteRecordingOnFinalize = false;
                 automaticStopQueued = false;
                 stopAllRequested = false;
@@ -508,50 +544,44 @@ public sealed class AudioLooperService : IDisposable
         {
             if (!recording) return;
             recording = false;
-            discardRecording = discard;
             finalizing = !discard;
-        }
-
-        StateChanged?.Invoke(this, EventArgs.Empty);
-        if (!discard)
-        {
-            _ = Task.Run(() =>
+            if (discard)
             {
-                try { FinalizeRecording(); }
-                finally
+                recordingBytes?.Dispose(); recordingBytes = null; recordingFormat = null;
+            }
+            else
+            {
+                finalizationTask = Task.Run(() =>
                 {
-                    lock (syncRoot) finalizing = false;
-                    StateChanged?.Invoke(this, EventArgs.Empty);
-                }
-            });
-        }
-        else
-        {
-            lock (syncRoot)
-            {
-                recordingBytes?.Dispose();
-                recordingBytes = null;
-                recordingFormat = null;
+                    try { FinalizeRecording(); }
+                    catch (Exception exception) { Report($"Could not finish loop · {exception.Message}"); }
+                    finally
+                    {
+                        lock (syncRoot) finalizing = false;
+                        StateChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                });
             }
         }
+        StateChanged?.Invoke(this, EventArgs.Empty);
         if (liveInputEffect == LiveInputEffect.None) StopCapture();
     }
 
     private void OnCaptureDataAvailable(object? sender, WaveInEventArgs e)
     {
+        if (!ReferenceEquals(sender, capture)) return;
         liveInputBuffer?.AddSamples(e.Buffer, 0, e.BytesRecorded);
         var shouldStop = false;
         lock (syncRoot)
         {
             if (!recording || recordingBytes is null || recordingFormat is null) return;
-            var maximumSeconds = MaximumSteps * 60d / Math.Clamp(mixProvider.TempoBpm, 60d, 180d) / 4d;
-            var maximumBytes = (long)Math.Ceiling(recordingFormat.AverageBytesPerSecond * maximumSeconds);
-            var writable = (int)Math.Min(e.BytesRecorded, Math.Max(0, maximumBytes - recordingBytes.Length));
+            var writable = (int)Math.Min(e.BytesRecorded, Math.Max(0, maximumRecordingBytes - recordingBytes.Length));
+            writable -= writable % recordingFormat.BlockAlign;
             if (writable > 0)
             {
                 recordingBytes.Write(e.Buffer, 0, writable);
             }
-            if (recordingBytes.Length >= maximumBytes)
+            if (recordingBytes.Length >= maximumRecordingBytes)
             {
                 if (!automaticStopQueued)
                 {
@@ -562,110 +592,115 @@ public sealed class AudioLooperService : IDisposable
         }
         if (shouldStop)
         {
-            _ = Task.Run(() => StopRecording());
+            var owner = recordingBytes;
+            _ = Task.Run(() =>
+            {
+                lock (deviceLock)
+                {
+                    if (ReferenceEquals(owner, recordingBytes)) StopRecording();
+                }
+            });
         }
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
-        var recoverRecording = false;
-        lock (syncRoot)
+        if (!ReferenceEquals(sender, capture)) return;
+        // Dispose/join from a worker, never from the capture callback itself.
+        _ = Task.Run(() =>
         {
-            if (recording)
+            lock (deviceLock)
             {
-                recording = false;
-                finalizing = true;
-                recoverRecording = true;
+                if (!ReferenceEquals(sender, capture)) return;
+                if (recording) StopRecording();
+                DisposeCapture();
+                liveInputEffect = LiveInputEffect.None;
+                mixProvider.LiveEffect = LiveInputEffect.None;
+                Report(e.Exception is null ? "Input stopped · captured loop preserved" : $"Input stopped · {e.Exception.Message}");
+                StateChanged?.Invoke(this, EventArgs.Empty);
             }
-        }
-        if (recoverRecording)
-        {
-            Report(e.Exception is null ? "Input stopped · preserving captured loop" : $"Input stopped · {e.Exception.Message} · preserving loop");
-            _ = Task.Run(() =>
-            {
-                try { FinalizeRecording(); }
-                finally
-                {
-                    lock (syncRoot) finalizing = false;
-                    StateChanged?.Invoke(this, EventArgs.Empty);
-                }
-            });
-        }
-        DisposeCapture();
+        });
     }
 
     private void FinalizeRecording()
     {
-        byte[] nativeBytes;
+        MemoryStream? nativeStream;
         WaveFormat? nativeFormat;
-        int trackIndex;
+        int trackIndex, revision;
         long startPosition;
         bool detectTempo;
-        bool muteAfterFinalize;
+        short[] original;
+        double reference, speed;
         lock (syncRoot)
         {
-            nativeBytes = recordingBytes?.ToArray() ?? [];
-            nativeFormat = recordingFormat;
-            recordingBytes?.Dispose();
-            recordingBytes = null;
-            recordingFormat = null;
-            trackIndex = recordingTrack;
-            startPosition = recordingStartPosition;
-            detectTempo = !tracks.Any(candidate => candidate.Samples.Length > 0);
-            muteAfterFinalize = muteRecordingOnFinalize;
-            muteRecordingOnFinalize = false;
+            nativeStream = recordingBytes; nativeFormat = recordingFormat;
+            recordingBytes = null; recordingFormat = null;
+            trackIndex = recordingTrack; startPosition = recordingStartPosition;
+            original = tracks[trackIndex].Samples;
+            revision = tracks[trackIndex].Revision;
+            detectTempo = !manualTempo && !tracks.Any(candidate => candidate.Samples.Length > 0);
+            reference = mixProvider.ReferenceBpm;
+            speed = recordingSpeed;
         }
 
-        // Format conversion and BPM analysis can be expensive; keep them off the real-time mixer lock.
-        var captured = nativeFormat is null ? [] : ConvertToMono48k(nativeBytes, nativeFormat);
+        // Published PCM is immutable. Conversion, copies and overdubs run off the audio lock.
+        short[] captured;
+        using (nativeStream) captured = nativeStream is null || nativeFormat is null ? [] : ConvertToMono48k(nativeStream, nativeFormat);
+        if (captured.Length == 0) { Report($"Track {trackIndex + 1} recording was empty"); return; }
         var detectedBpm = 120d;
         var tempoDetected = detectTempo && TryDetectBpm(captured, out detectedBpm);
-        string result;
+        if (detectTempo)
+        {
+            reference = tempoDetected ? detectedBpm : mixProvider.TempoBpm;
+            speed = 1;
+        }
+        // Store all tracks in the reference-tempo timeline, including overdubs at a changed BPM.
+        captured = ResampleToTimeline(captured, speed);
+        var steps = original.Length == 0 ? Math.Clamp((int)Math.Round(captured.Length / SamplesPerStep(reference)), 1, MaximumSteps) : tracks[trackIndex].Steps;
+        var completed = original.Length == 0 ? new short[Math.Max(1, (int)Math.Round(steps * SamplesPerStep(reference)))] : (short[])original.Clone();
+        if (original.Length == 0)
+        {
+            Array.Copy(captured, completed, Math.Min(captured.Length, completed.Length));
+            ApplyBoundaryFade(completed);
+        }
+        else
+        {
+            var trackStart = tracks[trackIndex].StartPosition;
+            for (var i = 0; i < captured.Length; i++)
+            {
+                var target = PositiveModulo(startPosition + i - trackStart, completed.Length);
+                completed[target] = Clip(completed[target] + captured[i]);
+            }
+        }
         lock (syncRoot)
         {
             var track = tracks[trackIndex];
-            if (captured.Length == 0)
-            {
-                result = $"Track {trackIndex + 1} recording was empty";
-            }
-            else if (track.Samples.Length == 0)
-            {
-                track.UndoSamples = [];
-                if (detectTempo)
-                {
-                    BpmWasDetected = tempoDetected;
-                    mixProvider.ConfigureReferenceTempo(tempoDetected ? detectedBpm : 120d);
-                }
-                var stepSamples = SamplesPerStep(mixProvider.ReferenceBpm);
-                var steps = Math.Clamp((int)Math.Round(captured.Length / stepSamples), 1, MaximumSteps);
-                var quantizedLength = Math.Max(1, (int)Math.Round(steps * stepSamples));
-                track.Samples = new short[quantizedLength];
-                Array.Copy(captured, track.Samples, Math.Min(captured.Length, quantizedLength));
-                ApplyBoundaryFade(track.Samples);
-                track.Steps = steps;
-                track.StartPosition = QuantizeToStep(startPosition, stepSamples);
-                track.Muted = false;
-                result = $"Track {trackIndex + 1} captured · {steps} steps · {mixProvider.TempoBpm:0.0} BPM{(BpmWasDetected ? " auto" : " fallback")}";
-                audioRevision++;
-            }
-            else
-            {
-                track.UndoSamples = (short[])track.Samples.Clone();
-                for (var index = 0; index < captured.Length; index++)
-                {
-                    var target = PositiveModulo(startPosition + index - track.StartPosition, track.Samples.Length);
-                    track.Samples[target] = Clip(track.Samples[target] + captured[index]);
-                }
-                result = $"Track {trackIndex + 1} overdub captured";
-                audioRevision++;
-            }
-            if (muteAfterFinalize || stopAllRequested)
-            {
-                track.Muted = true;
-            }
+            if (track.Revision != revision) return; // Clear/undo wins over an in-flight finalization.
+            if (detectTempo) { BpmWasDetected = tempoDetected; mixProvider.ConfigureReferenceTempo(reference); }
+            track.UndoSamples = original;
+            track.Samples = completed;
+            track.Steps = steps;
+            if (original.Length == 0) track.StartPosition = QuantizeToStep(startPosition, SamplesPerStep(reference));
+            track.Muted = muteRecordingOnFinalize || stopAllRequested;
+            muteRecordingOnFinalize = false;
+            track.Revision++;
+            audioRevision++;
         }
-        Report(result);
+        Report(original.Length == 0 ? $"Track {trackIndex + 1} captured · {steps} steps · {mixProvider.TempoBpm:0.0} BPM" : $"Track {trackIndex + 1} overdub captured");
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal static short[] ResampleToTimeline(short[] source, double speed)
+    {
+        if (Math.Abs(speed - 1) < 0.000001 || source.Length == 0) return source;
+        var result = new short[Math.Max(1, (int)Math.Round(source.Length * speed))];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var position = Math.Min(i / speed, source.Length - 1);
+            var left = (int)position;
+            result[i] = (short)Math.Round(source[left] + (source[Math.Min(left + 1, source.Length - 1)] - source[left]) * (position - left));
+        }
+        return result;
     }
 
     private void ToggleTrackPlayback(int trackIndex)
@@ -716,6 +751,7 @@ public sealed class AudioLooperService : IDisposable
     {
         lock (syncRoot)
         {
+            if (recording || finalizing) { Report("Finish the dub layer before Undo"); return; }
             var track = tracks[selectedTrack];
             if (track.UndoSamples.Length == 0)
             {
@@ -723,6 +759,7 @@ public sealed class AudioLooperService : IDisposable
                 return;
             }
             (track.Samples, track.UndoSamples) = (track.UndoSamples, track.Samples);
+            track.Revision++;
             audioRevision++;
             Report($"Track {selectedTrack + 1} undo");
         }
@@ -734,6 +771,7 @@ public sealed class AudioLooperService : IDisposable
         if (recording && recordingTrack == trackIndex) StopRecording(discard: true);
         lock (syncRoot)
         {
+            tracks[trackIndex].Revision++;
             tracks[trackIndex].Samples = [];
             tracks[trackIndex].UndoSamples = [];
             tracks[trackIndex].Muted = false;
@@ -785,7 +823,7 @@ public sealed class AudioLooperService : IDisposable
 
     private void EnsureOutput()
     {
-        if (output is not null) return;
+        if (output is not null) { output.Play(); return; }
         MMDevice? outputDevice = null;
         if (!string.IsNullOrWhiteSpace(configuredOutputDeviceId))
         {
@@ -796,79 +834,87 @@ public sealed class AudioLooperService : IDisposable
         output = outputDevice is null
             ? new WasapiOut(AudioClientShareMode.Shared, true, OutputBufferMilliseconds)
             : new WasapiOut(outputDevice, AudioClientShareMode.Shared, true, OutputBufferMilliseconds);
-        output.Init(mixProvider);
-        output.Play();
+        try { output.Init(mixProvider); output.Play(); }
+        catch { output.Dispose(); output = null; throw; }
+        finally { outputDevice?.Dispose(); }
     }
 
     private void EnsureCapture()
     {
-        if (capture is not null) return;
-        using var enumerator = new MMDeviceEnumerator();
-        MMDevice inputDevice;
-        try
+        lock (deviceLock)
         {
-            inputDevice = string.IsNullOrWhiteSpace(configuredInputDeviceId)
-                ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console)
-                : enumerator.GetDevice(configuredInputDeviceId);
+            if (capture is not null) return;
+            using var enumerator = new MMDeviceEnumerator();
+            MMDevice inputDevice;
+            try
+            {
+                inputDevice = string.IsNullOrWhiteSpace(configuredInputDeviceId)
+                    ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console)
+                    : enumerator.GetDevice(configuredInputDeviceId);
+            }
+            catch
+            {
+                configuredInputDeviceId = null;
+                inputDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
+            }
+            captureDeviceName = inputDevice.FriendlyName;
+            capture = new WasapiCapture(inputDevice);
+            captureFormat = capture.WaveFormat;
+            liveInputBuffer = new BufferedWaveProvider(captureFormat)
+            {
+                BufferDuration = TimeSpan.FromMilliseconds(500),
+                DiscardOnBufferOverflow = true,
+                ReadFully = true,
+            };
+            ISampleProvider liveSamples = liveInputBuffer.ToSampleProvider();
+            if (liveSamples.WaveFormat.Channels > 1) liveSamples = new FirstTwoChannelMonoSampleProvider(liveSamples);
+            if (liveSamples.WaveFormat.SampleRate != SampleRate) liveSamples = new WdlResamplingSampleProvider(liveSamples, SampleRate);
+            mixProvider.SetLiveInput(liveSamples);
+            capture.DataAvailable += OnCaptureDataAvailable;
+            capture.RecordingStopped += OnRecordingStopped;
+            try { capture.StartRecording(); }
+            catch { DisposeCapture(); throw; }
+            finally { inputDevice.Dispose(); }
         }
-        catch
-        {
-            configuredInputDeviceId = null;
-            inputDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-        }
-        captureDeviceName = inputDevice.FriendlyName;
-        capture = new WasapiCapture(inputDevice);
-        captureFormat = capture.WaveFormat;
-        liveInputBuffer = new BufferedWaveProvider(captureFormat)
-        {
-            BufferDuration = TimeSpan.FromMilliseconds(500),
-            DiscardOnBufferOverflow = true,
-            ReadFully = true,
-        };
-        ISampleProvider liveSamples = liveInputBuffer.ToSampleProvider();
-        if (liveSamples.WaveFormat.Channels > 1) liveSamples = new FirstTwoChannelMonoSampleProvider(liveSamples);
-        if (liveSamples.WaveFormat.SampleRate != SampleRate) liveSamples = new WdlResamplingSampleProvider(liveSamples, SampleRate);
-        mixProvider.SetLiveInput(liveSamples);
-        capture.DataAvailable += OnCaptureDataAvailable;
-        capture.RecordingStopped += OnRecordingStopped;
-        capture.StartRecording();
+
     }
 
-    private void StopCapture()
-    {
-        var activeCapture = capture;
-        if (activeCapture is null) return;
-        try { activeCapture.StopRecording(); }
-        catch { DisposeCapture(); }
-    }
+    private void StopCapture() => DisposeCapture();
 
     private void DisposeCapture()
     {
-        var oldCapture = capture;
-        capture = null;
-        if (oldCapture is null) return;
-        oldCapture.DataAvailable -= OnCaptureDataAvailable;
-        oldCapture.RecordingStopped -= OnRecordingStopped;
-        oldCapture.Dispose();
-        liveInputBuffer = null;
-        captureFormat = null;
-        if (liveInputEffect == LiveInputEffect.None) mixProvider.SetLiveInput(null);
+        lock (deviceLock)
+        {
+            var oldCapture = capture;
+            capture = null;
+            if (oldCapture is null) return;
+            oldCapture.DataAvailable -= OnCaptureDataAvailable;
+            oldCapture.RecordingStopped -= OnRecordingStopped;
+            oldCapture.Dispose();
+            liveInputBuffer = null;
+            captureFormat = null;
+
+            mixProvider.SetLiveInput(null);
+        }
+
     }
 
     private void ScheduleSessionSave()
     {
-        CancellationTokenSource cancellation;
+        CancellationToken token;
         lock (syncRoot)
         {
+            if (disposed) return;
             sessionSaveCancellation?.Cancel();
             sessionSaveCancellation?.Dispose();
-            sessionSaveCancellation = cancellation = new CancellationTokenSource();
+            sessionSaveCancellation = new CancellationTokenSource();
+            token = sessionSaveCancellation.Token;
         }
         _ = Task.Run(async () =>
         {
             try
             {
-                await Task.Delay(650, cancellation.Token);
+                await Task.Delay(650, token);
                 SaveSessionSnapshot();
             }
             catch (OperationCanceledException)
@@ -879,55 +925,71 @@ public sealed class AudioLooperService : IDisposable
 
     private void SaveSessionSnapshot(bool forceAudio = false)
     {
-        try
+        lock (saveLock)
         {
-            SessionState state;
-            short[][]? audio = null;
-            int revision;
-            lock (syncRoot)
+            try
             {
-                revision = audioRevision;
-                var saveAudio = forceAudio || revision != savedAudioRevision;
-                if (saveAudio) audio = tracks.Select(track => (short[])track.Samples.Clone()).ToArray();
-                state = new SessionState
+                SessionState state;
+                var generation = Guid.NewGuid().ToString("N");
+                short[][]? audio = null;
+                int revision;
+                lock (syncRoot)
                 {
-                    Version = 1,
-                    SelectedTrack = selectedTrack,
-                    TempoBpm = mixProvider.TempoBpm,
-                    ReferenceBpm = mixProvider.ReferenceBpm,
-                    Position = mixProvider.Position,
-                    MasterVolume = mixProvider.MasterVolume,
-                    EffectDepth = mixProvider.EffectDepth,
-                    LiveEffectDepth = mixProvider.LiveEffectDepth,
-                    Tracks = tracks.Select((track, index) => new SessionTrackState
+                    revision = audioRevision;
+                    var saveAudio = forceAudio || revision != savedAudioRevision;
+                    if (saveAudio) audio = tracks.Select(track => track.Samples).ToArray();
+                    state = new SessionState
                     {
-                        File = $"track-{index + 1}.pcm",
-                        Steps = track.Steps,
-                        StartPosition = track.StartPosition,
-                        Muted = track.Muted,
-                        FxEnabled = track.FxEnabled,
-                    }).ToArray(),
-                };
-            }
-
-            Directory.CreateDirectory(sessionDirectory);
-            if (audio is not null)
-            {
-                for (var index = 0; index < audio.Length; index++)
-                {
-                    var bytes = new byte[audio[index].Length * sizeof(short)];
-                    Buffer.BlockCopy(audio[index], 0, bytes, 0, bytes.Length);
-                    File.WriteAllBytes(Path.Combine(sessionDirectory, $"track-{index + 1}.pcm"), bytes);
+                        Version = 1,
+                        ManualTempo = manualTempo,
+                        SelectedTrack = selectedTrack,
+                        TempoBpm = mixProvider.TempoBpm,
+                        ReferenceBpm = mixProvider.ReferenceBpm,
+                        Position = mixProvider.Position,
+                        MasterVolume = mixProvider.MasterVolume,
+                        EffectDepth = mixProvider.EffectDepth,
+                        LiveEffectDepth = mixProvider.LiveEffectDepth,
+                        Tracks = tracks.Select((track, index) => new SessionTrackState
+                        {
+                            File = saveAudio ? $"track-{index + 1}-{generation}.pcm" : track.SavedFile,
+                            Steps = track.Steps,
+                            StartPosition = track.StartPosition,
+                            Muted = track.Muted,
+                            FxEnabled = track.FxEnabled,
+                        }).ToArray(),
+                    };
                 }
-                savedAudioRevision = revision;
+
+                Directory.CreateDirectory(sessionDirectory);
+                if (audio is not null)
+                {
+                    for (var index = 0; index < audio.Length; index++)
+                    {
+                        using var file = File.Create(Path.Combine(sessionDirectory, state.Tracks[index].File));
+                        file.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(audio[index].AsSpan()));
+                        file.Flush(flushToDisk: true);
+                    }
+                }
+                var temporary = sessionStatePath + ".tmp";
+                File.WriteAllText(temporary, System.Text.Json.JsonSerializer.Serialize(state,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                File.Move(temporary, sessionStatePath, overwrite: true);
+                lock (syncRoot)
+                {
+                    savedAudioRevision = revision;
+                    for (var i = 0; i < tracks.Length; i++) tracks[i].SavedFile = state.Tracks[i].File;
+                }
+                // Only remove generations after their replacement manifest has committed.
+                var retained = state.Tracks.Select(t => t.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var path in Directory.EnumerateFiles(sessionDirectory, "track-*.pcm"))
+                    if (!retained.Contains(Path.GetFileName(path))) File.Delete(path);
             }
-            File.WriteAllText(sessionStatePath, System.Text.Json.JsonSerializer.Serialize(state,
-                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            catch
+            {
+                // The active in-memory session remains usable if local persistence is unavailable.
+            }
         }
-        catch
-        {
-            // The active in-memory session remains usable if local persistence is unavailable.
-        }
+
     }
 
     private void LoadSession()
@@ -936,7 +998,17 @@ public sealed class AudioLooperService : IDisposable
         {
             if (!File.Exists(sessionStatePath)) return;
             var state = System.Text.Json.JsonSerializer.Deserialize<SessionState>(File.ReadAllText(sessionStatePath));
-            if (state?.Version != 1 || state.Tracks.Length != tracks.Length) return;
+            if (state?.Version != 1 || state.Tracks is null || state.Tracks.Length != tracks.Length) return;
+            if (!double.IsFinite(state.TempoBpm) || !double.IsFinite(state.ReferenceBpm) ||
+                !float.IsFinite(state.MasterVolume) || !float.IsFinite(state.EffectDepth) || !float.IsFinite(state.LiveEffectDepth)) return;
+            // Validate every entry before installing any track.
+            foreach (var entry in state.Tracks)
+            {
+                if (entry is null || string.IsNullOrWhiteSpace(entry.File) || entry.File != Path.GetFileName(entry.File) || entry.File.Contains(':')) return;
+                var file = new FileInfo(Path.Combine(sessionDirectory, entry.File));
+                if (!file.Exists || file.Length % 2 != 0 || file.Length > SampleRate * 128L * 2) return;
+            }
+            manualTempo = state.ManualTempo;
             for (var index = 0; index < tracks.Length; index++)
             {
                 var savedTrack = state.Tracks[index];
@@ -945,6 +1017,7 @@ public sealed class AudioLooperService : IDisposable
                 var samples = new short[bytes.Length / sizeof(short)];
                 if (samples.Length > 0) Buffer.BlockCopy(bytes, 0, samples, 0, samples.Length * sizeof(short));
                 tracks[index].Samples = samples;
+                tracks[index].SavedFile = savedTrack.File;
                 tracks[index].Steps = samples.Length == 0 ? 0 : Math.Clamp(savedTrack.Steps, 1, MaximumSteps);
                 tracks[index].StartPosition = savedTrack.StartPosition;
                 tracks[index].Muted = savedTrack.Muted;
@@ -957,6 +1030,7 @@ public sealed class AudioLooperService : IDisposable
         }
         catch
         {
+            foreach (var track in tracks) { track.Samples = []; track.Steps = 0; }
             // A damaged session starts empty rather than preventing app startup.
         }
     }
@@ -965,8 +1039,14 @@ public sealed class AudioLooperService : IDisposable
 
     public void Dispose()
     {
+        if (disposed) return;
+        disposed = true;
+        sessionSaveCancellation?.Cancel();
+        sessionSaveCancellation?.Dispose();
+        sessionSaveCancellation = null;
+        mixProvider.SetActive(false);
         ReleaseAll();
-        StopCapture();
+        finalizationTask.GetAwaiter().GetResult();
         DisposeCapture();
         output?.Stop();
         output?.Dispose();
@@ -977,7 +1057,7 @@ public sealed class AudioLooperService : IDisposable
     private static short Clip(int sample) => (short)Math.Clamp(sample, short.MinValue, short.MaxValue);
 
     private static long QuantizeToStep(long position, double stepSamples) =>
-        (long)Math.Round(position / stepSamples) * (long)Math.Round(stepSamples);
+        (long)Math.Round(Math.Round(position / stepSamples) * stepSamples);
 
     private static int PositiveModulo(long value, int modulus) => (int)((value % modulus + modulus) % modulus);
 
@@ -992,10 +1072,11 @@ public sealed class AudioLooperService : IDisposable
         }
     }
 
-    private static short[] ConvertToMono48k(byte[] nativeBytes, WaveFormat nativeFormat)
+    private static short[] ConvertToMono48k(Stream nativeBytes, WaveFormat nativeFormat)
     {
         if (nativeBytes.Length == 0) return [];
-        using var stream = new RawSourceWaveStream(new MemoryStream(nativeBytes, writable: false), nativeFormat);
+        nativeBytes.Position = 0;
+        using var stream = new RawSourceWaveStream(nativeBytes, nativeFormat);
         ISampleProvider samples = stream.ToSampleProvider();
         if (samples.WaveFormat.Channels > 1)
         {
@@ -1006,7 +1087,7 @@ public sealed class AudioLooperService : IDisposable
             samples = new WdlResamplingSampleProvider(samples, SampleRate);
         }
 
-        var converted = new List<short>();
+        var converted = new List<short>((int)Math.Ceiling(nativeBytes.Length / (double)nativeFormat.BlockAlign * SampleRate / nativeFormat.SampleRate));
         var buffer = new float[4096];
         int read;
         while ((read = samples.Read(buffer, 0, buffer.Length)) > 0)
@@ -1105,8 +1186,10 @@ public sealed class AudioLooperService : IDisposable
         _ => "DRY",
     };
 
-    private sealed class LoopTrack
+    internal sealed class LoopTrack
     {
+        public int Revision { get; set; }
+        public string SavedFile { get; set; } = "";
         public short[] Samples { get; set; } = [];
         public short[] UndoSamples { get; set; } = [];
         public bool Muted { get; set; }
@@ -1118,6 +1201,7 @@ public sealed class AudioLooperService : IDisposable
     private sealed class SessionState
     {
         public int Version { get; set; }
+        public bool ManualTempo { get; set; }
         public int SelectedTrack { get; set; }
         public double TempoBpm { get; set; } = 120d;
         public double ReferenceBpm { get; set; } = 120d;
@@ -1181,7 +1265,7 @@ public sealed class AudioLooperService : IDisposable
         }
     }
 
-    private enum PunchEffect
+    internal enum PunchEffect
     {
         None,
         Stutter,
@@ -1190,7 +1274,7 @@ public sealed class AudioLooperService : IDisposable
         Gate,
     }
 
-    private enum LiveInputEffect
+    internal enum LiveInputEffect
     {
         None,
         Reverb,
@@ -1198,7 +1282,7 @@ public sealed class AudioLooperService : IDisposable
         Robot,
     }
 
-    private sealed class LoopMixProvider(
+    internal sealed class LoopMixProvider(
         object syncRoot,
         LoopTrack[] tracks,
         Func<PunchEffect> currentEffect) : IWaveProvider
@@ -1208,13 +1292,14 @@ public sealed class AudioLooperService : IDisposable
         private double tempoBpm = 120d;
         private double referenceBpm = 120d;
         private ISampleProvider? liveInput;
-        private float[] liveBuffer = [];
+        private float[] liveBuffer = new float[SampleRate];
         private readonly float[] reverbDelay = new float[SampleRate * 2];
         private readonly float[] echoDelay = new float[SampleRate];
         private int reverbIndex;
         private int echoIndex;
         private long liveEffectPosition;
         private bool active;
+        public float InputPeak { get; private set; }
 
         public WaveFormat WaveFormat { get; } = new(SampleRate, 16, 2);
         public long Position
@@ -1303,7 +1388,11 @@ public sealed class AudioLooperService : IDisposable
 
         public void SetLiveInput(ISampleProvider? input)
         {
-            lock (syncRoot) liveInput = input;
+            lock (syncRoot)
+            {
+                liveInput = input;
+                if (input is null) { Array.Clear(reverbDelay); Array.Clear(echoDelay); InputPeak = 0; }
+            }
         }
 
         public int Read(byte[] buffer, int offset, int count)
@@ -1319,21 +1408,25 @@ public sealed class AudioLooperService : IDisposable
                 if (liveBuffer.Length < frameCount) liveBuffer = new float[frameCount];
                 Array.Clear(liveBuffer, 0, frameCount);
                 liveInput?.Read(liveBuffer, 0, frameCount);
+                var peak = 0f;
+                for (var i = 0; i < frameCount; i++) peak = Math.Max(peak, Math.Abs(liveBuffer[i]));
+                InputPeak = Math.Min(1, peak);
+                var effect = currentEffect();
+                var speed = tempoBpm / referenceBpm;
                 for (var frameOffset = 0; frameOffset < frameCount; frameOffset++)
                 {
                     var mixed = 0f;
-                    var currentPosition = (long)position;
-                    position += tempoBpm / referenceBpm;
+                    var currentPosition = position;
+                    position += speed;
                     for (var trackIndex = 0; trackIndex < tracks.Length; trackIndex++)
                     {
                         var track = tracks[trackIndex];
                         if (track.Muted || track.Samples.Length == 0) continue;
-                        var dryIndex = PositiveModulo(currentPosition - track.StartPosition, track.Samples.Length);
-                        var dry = track.Samples[dryIndex];
+                        var dry = Interpolate(track.Samples, currentPosition - track.StartPosition);
                         var effected = dry;
                         if (track.FxEnabled)
                         {
-                            effected = GetEffectedSample(track, currentPosition, currentEffect(), dry);
+                            effected = GetEffectedSample(track, currentPosition, effect, dry);
                         }
                         mixed += dry + ((effected - dry) * EffectDepth);
                     }
@@ -1354,18 +1447,26 @@ public sealed class AudioLooperService : IDisposable
             return count;
         }
 
-        private short GetEffectedSample(LoopTrack track, long currentPosition, PunchEffect effect, short dry)
+        internal static float Interpolate(short[] samples, double position)
+        {
+            var floor = (long)Math.Floor(position);
+            var index = PositiveModulo(floor, samples.Length);
+            var next = index + 1 == samples.Length ? 0 : index + 1;
+            return samples[index] + (samples[next] - samples[index]) * (float)(position - floor);
+        }
+
+        private float GetEffectedSample(LoopTrack track, double currentPosition, PunchEffect effect, float dry)
         {
             if (effect == PunchEffect.None) return dry;
             var length = track.Samples.Length;
             var elapsed = Math.Max(0, currentPosition - effectStart);
-            int At(long absolutePosition) => PositiveModulo(absolutePosition - track.StartPosition, length);
+            float At(double absolutePosition) => Interpolate(track.Samples, absolutePosition - track.StartPosition);
             return effect switch
             {
-                PunchEffect.Stutter => track.Samples[At(effectStart + (elapsed % (SampleRate / 8)))],
-                PunchEffect.Reverse => track.Samples[PositiveModulo(-(currentPosition - track.StartPosition) - 1, length)],
-                PunchEffect.HalfSpeed => track.Samples[At(effectStart + (elapsed / 2))],
-                PunchEffect.Gate => (elapsed / (SampleRate / 16)) % 2 == 0 ? dry : (short)0,
+                PunchEffect.Stutter => At(effectStart + (elapsed % (SampleRate / 8))),
+                PunchEffect.Reverse => At(effectStart - elapsed),
+                PunchEffect.HalfSpeed => At(effectStart + (elapsed / 2)),
+                PunchEffect.Gate => ((long)(elapsed / (SampleRate / 16))) % 2 == 0 ? dry : (short)0,
                 _ => dry,
             };
         }

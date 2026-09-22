@@ -28,4 +28,4 @@ The transport buttons use Windows media keys, so they follow the operating syste
 
 B13 remains brightly lit in both the app and hardware while the default microphone is muted. The endpoint is refreshed periodically, so changing the default Windows microphone is picked up without restarting the companion.
 
-`Per-app mixer` remains observation-only until its audio-session picker is present. Safe Stop pauses future media actions; media-key actions are discrete and do not leave held key state behind.
+`Per-app mixer` uses B11/B12 to select the previous/next Windows audio session, GAIN for its absolute volume, B13/B14 for 5% adjustments, and PLAY/TAP for mute. The status message identifies the selected application. Start audio playback if no sessions appear. Safe Stop pauses future media actions; media-key actions are discrete and do not leave held key state behind.

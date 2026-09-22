@@ -40,7 +40,7 @@ public sealed class ProductivityOutputService
 
     public event EventHandler<string>? ActionReported;
 
-    public static bool SupportsSubmode(string submode) => submode is "Windows" or "Browser" or "Meetings";
+    public static bool SupportsSubmode(string submode) => submode is "Windows" or "Browser" or "Meetings" or "Streaming";
 
     public void Handle(MidiActivity activity, bool enabled, string submode)
     {
@@ -109,6 +109,8 @@ public sealed class ProductivityOutputService
     {
         var result = submode switch
         {
+            // Bind Ctrl+Alt+F13–F20 in OBS (Settings → Hotkeys).
+            "Streaming" => RouteStreamingButton(note),
             "Browser" => RouteBrowserButton(note),
             "Meetings" => RouteMeetingButton(note),
             _ => RouteWindowsButton(note),
@@ -117,6 +119,12 @@ public sealed class ProductivityOutputService
         {
             ActionReported?.Invoke(this, result.Action);
         }
+    }
+
+    private static (bool Sent, string Action) RouteStreamingButton(int note)
+    {
+        var index = Array.IndexOf(CustomMappingService.Notes, note);
+        return index < 0 ? (false, "") : (SendChord((ushort)(0x7C + index), VkControl, VkAlt), $"Streaming hotkey Ctrl+Alt+F{13 + index}");
     }
 
     private static (bool Sent, string Action) RouteWindowsButton(int note)
@@ -199,55 +207,5 @@ public sealed class ProductivityOutputService
         lastGainPosition = position;
     }
 
-    private static bool SendChord(ushort key, params ushort[] modifiers)
-    {
-        var inputs = new List<Input>(modifiers.Length * 2 + 2);
-        inputs.AddRange(modifiers.Select(CreateKeyDown));
-        inputs.Add(CreateKeyDown(key));
-        inputs.Add(CreateKeyUp(key));
-        for (var index = modifiers.Length - 1; index >= 0; index--)
-        {
-            inputs.Add(CreateKeyUp(modifiers[index]));
-        }
-        var buffer = inputs.ToArray();
-        return SendInput((uint)buffer.Length, buffer, Marshal.SizeOf<Input>()) == buffer.Length;
-    }
-
-    private static Input CreateKeyDown(ushort key) => new()
-    {
-        Type = InputKeyboard,
-        Union = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = key } },
-    };
-
-    private static Input CreateKeyUp(ushort key) => new()
-    {
-        Type = InputKeyboard,
-        Union = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = key, Flags = KeyUp } },
-    };
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Input
-    {
-        public uint Type;
-        public InputUnion Union;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)] public KeyboardInput Keyboard;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KeyboardInput
-    {
-        public ushort VirtualKey;
-        public ushort ScanCode;
-        public uint Flags;
-        public uint Time;
-        public nint ExtraInfo;
-    }
+    private static bool SendChord(ushort key, params ushort[] modifiers) => KeyboardOutput.SendChord(key, modifiers);
 }

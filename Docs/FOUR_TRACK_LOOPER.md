@@ -52,3 +52,14 @@ SHIFT + B14 enables wet-only live microphone effects even when no loop is playin
 Settings now has a `Modules` tab. Each printed hardware bank can host any available module. Selecting a module already assigned elsewhere swaps the two banks; selecting the currently inactive module replaces that bank's previous module. Assignments persist under `%LOCALAPPDATA%\SCSCompanion\module-assignments.json`.
 
 Settings is organized into `General`, `Modules`, and `DJ`. General begins with Windows-default-or-specific output and microphone selection plus external sync correction. DJ contains virtual MIDI status and the Mixxx and VirtualDJ profile installers.
+
+## Engine and persistence refinements
+
+- Track PCM is immutable while published to the mixer. Conversion, resampling, overdub merging, and disk I/O happen outside its lock.
+- Recordings at a changed tempo are converted into the common reference timeline before quantization or overdubbing. Tempo changes and tap-phase adjustments are deferred while recording/finalizing; finish the layer first. A manual tempo is preserved instead of being overwritten by first-loop analysis.
+- Playback interpolates between samples at fractional positions. Tempo remains tape-speed control, with corresponding pitch changes.
+- Capture is limited to 512 steps and 128 MiB of native input, whichever comes first. The first two input channels supply the mono loop engine; output duplicates that mix to stereo.
+- The small meter beneath the surface title shows microphone input while recording or using live FX. Dry monitoring remains off.
+- Changes to the selected/default Windows endpoints are checked every two seconds. A recording is finalized when routing changes. An inactive module pauses audio output and freezes its transport.
+- Each saved audio generation is written before an atomic session-manifest replacement. Old generation files are removed only after commit. Version 1 sessions remain readable. Shutdown waits for finalization before its final save.
+- Undo swaps the latest two completed versions, so pressing Undo again acts as Redo. Undo is blocked during a capture or finalization.

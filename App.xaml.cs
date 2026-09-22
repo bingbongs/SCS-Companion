@@ -12,6 +12,7 @@ namespace SCSCompanion
     {
         private static readonly SizeInt32 FixedWindowSize = new(458, 660);
         private Window? window;
+        private Mutex? instanceMutex;
         private bool restoringFixedSize;
 
         /// <summary>
@@ -40,6 +41,14 @@ namespace SCSCompanion
         /// <param name="e">Details about the launch request and process.</param>
         protected override void OnLaunched(LaunchActivatedEventArgs e)
         {
+            instanceMutex = new Mutex(true, "Local\\SCSCompanion", out var firstInstance);
+            if (!firstInstance)
+            {
+                instanceMutex.Dispose();
+                instanceMutex = null;
+                Exit();
+                return;
+            }
             window ??= new Window();
 
             if (window.Content is not Frame rootFrame)
@@ -58,6 +67,12 @@ namespace SCSCompanion
             {
                 window.SetTitleBar(mainPage.TitleBarDragRegion);
             }
+            window.Closed += (_, _) =>
+            {
+                (rootFrame.Content as MainPage)?.Shutdown();
+                instanceMutex?.Dispose();
+                instanceMutex = null;
+            };
             window.Activate();
 
             var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(window);
@@ -66,7 +81,7 @@ namespace SCSCompanion
             appWindow.Resize(FixedWindowSize);
             var displayArea = DisplayArea.GetFromWindowId(windowId, DisplayAreaFallback.Primary);
             var workArea = displayArea.WorkArea;
-            var maximumX = workArea.X + workArea.Width - FixedWindowSize.Width;
+            var maximumX = workArea.X + Math.Max(0, workArea.Width - FixedWindowSize.Width);
             var clampedX = Math.Clamp(appWindow.Position.X, workArea.X, maximumX);
             appWindow.Move(new PointInt32(clampedX, workArea.Y + 6));
             appWindow.Changed += OnAppWindowChanged;

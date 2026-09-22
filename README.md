@@ -28,8 +28,8 @@ Both builds are self-contained. Windows may display a SmartScreen warning becaus
 
 | Module | Purpose |
 | --- | --- |
-| **DJ** | Cycles software-specific utility layouts for Serato, Mixxx, VirtualDJ, Traktor, rekordbox, and djay Pro. Bundled Mixxx and VirtualDJ profiles can be installed from Settings. |
-| **Media** | Windows output level, playback transport, microphone level, and microphone mute. |
+| **DJ** | Cycles software-specific utility layouts for Serato, Mixxx, and VirtualDJ. Bundled Mixxx and VirtualDJ profiles can be installed from Settings. |
+| **Media** | Windows output level, per-app volume/mute, playback transport, microphone level, and microphone mute. |
 | **Productivity** | Windows, browser, meeting, and streaming shortcuts designed to complement a keyboard. |
 | **Looper** | Four independently sized, tempo-synchronized microphone loops with overdub, undo, quantization, tap/estimated BPM, punch effects, live effects, and persistent sessions. |
 | **VRChat** | Avatar-independent native OSC movement, look, jump, run, voice, menu, use, grab, radial-menu pointer, and precision controls for Desktop and PC VR. |
@@ -39,11 +39,11 @@ Both builds are self-contained. Windows may display a SmartScreen warning becaus
 | **Discord** | Voice-chat mute, deafen, navigation, search, dismiss, and output-level controls. |
 | **Simon** | Infinite four-pad memory game with hardware light sequences, increasing difficulty, lose feedback, and persistent high score. |
 | **Pink Trombone** | Native low-latency glottal/formant vocal-tract instrument with tongue, mouth, pitch, nasal, hold, and voice-character controls. |
-| **Custom** | Reserved user profile banks for the growing mapping editor. |
+| **Custom** | Three saved keyboard-shortcut banks with a Settings editor, validation, and MIDI Learn. |
 
 ## Interface
 
-The main faceplate follows the physical controller so MIDI input is immediately understandable. The settings flyout stays compact and separates general, module assignment, mouse, DJ integration, and attribution pages.
+The main faceplate follows the physical controller so MIDI input is immediately understandable. The settings flyout separates general, module assignment, Custom mapping, mouse, DJ integration, and attribution pages.
 
 | Default faceplate | General settings |
 | --- | --- |
@@ -112,3 +112,15 @@ See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the complete attribution and independ
 ## Status and trademarks
 
 Version 1.0 is an independent community release. It is not affiliated with or endorsed by Stanton, Gibson, Korg, Mixxx, VRChat, Discord, Audacity, or VirtualDJ. Product names and trademarks belong to their respective owners.
+
+## Current source improvements
+
+The unreleased source includes the completed [Custom editor and shortcut banks](Docs/CUSTOM_AND_SHORTCUTS.md), per-app media mixing, and a revised looper engine. Existing 1.0.0 release downloads do not contain these changes until a new release is packaged.
+
+Run the hardware-independent audio/control regressions with:
+
+```powershell
+dotnet run --project Tests/SCSCompanion.RegressionTests.csproj -c Release
+```
+
+See [the review and validation notes](Docs/PROJECT_REVIEW.md) for the fixes, measured rendering cost, and remaining hardware checks.

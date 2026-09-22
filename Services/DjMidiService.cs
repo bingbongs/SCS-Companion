@@ -31,6 +31,7 @@ public sealed class DjMidiService : IDisposable
     private DeviceWatcher? watcher;
     private IMidiOutPort? outputPort;
     private string? connectedDeviceId;
+    private bool disposed;
     private bool isRefreshing;
     private bool refreshAgain;
     private DateTimeOffset lastRingPulse;
@@ -112,6 +113,7 @@ public sealed class DjMidiService : IDisposable
 
     private async Task RefreshConnectionAsync()
     {
+        if (disposed) return;
         if (isRefreshing)
         {
             refreshAgain = true;
@@ -125,6 +127,7 @@ public sealed class DjMidiService : IDisposable
             {
                 refreshAgain = false;
                 var devices = await DeviceInformation.FindAllAsync(MidiOutPort.GetDeviceSelector());
+                if (disposed) return;
                 var device = devices.FirstOrDefault(candidate =>
                     candidate.Name.Contains("SCS Companion MIDI", StringComparison.OrdinalIgnoreCase))
                     ?? devices.FirstOrDefault(candidate =>
@@ -150,6 +153,7 @@ public sealed class DjMidiService : IDisposable
                 try
                 {
                     outputPort = await MidiOutPort.FromIdAsync(device.Id);
+                    if (disposed) { Disconnect(); return; }
                     if (outputPort is null)
                     {
                         PublishStatus("Virtual MIDI port unavailable");
@@ -166,6 +170,10 @@ public sealed class DjMidiService : IDisposable
                 }
             }
             while (refreshAgain);
+        }
+        catch (Exception exception)
+        {
+            if (!disposed) PublishStatus($"MIDI refresh unavailable · {exception.Message}");
         }
         finally
         {
@@ -227,6 +235,8 @@ public sealed class DjMidiService : IDisposable
 
     public void Dispose()
     {
+        if (disposed) return;
+        disposed = true;
         if (watcher is not null)
         {
             watcher.Added -= OnDevicesChanged;

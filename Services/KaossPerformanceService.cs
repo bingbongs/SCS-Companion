@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using SCSCompanion.Models;
 
 namespace SCSCompanion.Services;
@@ -13,6 +14,8 @@ public sealed class KaossPerformanceService : IDisposable
     private bool gateArp;
     private DateTimeOffset lastTap;
     private int program;
+    private int loadGeneration;
+    private bool disposed;
     public string ProgramName => provider.SampleLoaded && program == 5 ? "SAMPLE" : new[] { "SINE", "BASS", "LEAD", "PLUCK", "NOISE", "SAMPLE" }[program];
     public string SampleName { get; private set; } = "DROP AUDIO HERE";
     public double Bpm { get; private set; } = 120;
@@ -33,20 +36,22 @@ public sealed class KaossPerformanceService : IDisposable
             output = device is null ? new WasapiOut(AudioClientShareMode.Shared, true, 45) : new WasapiOut(device, AudioClientShareMode.Shared, true, 45);
             output.Init(provider); device?.Dispose(); if (wasActive) output.Play();
         }
-        catch (Exception ex) { StateChanged?.Invoke(this, $"Audio unavailable · {ex.Message}"); }
+        catch (Exception ex) { output?.Dispose(); output = null; StateChanged?.Invoke(this, $"Audio unavailable · {ex.Message}"); }
     }
 
     public void SetActive(bool value)
     {
         active = value; provider.Active = value;
-        if (value) output?.Play(); else { provider.Gate = false; output?.Pause(); }
+        if (value) output?.Play(); else { provider.Gate = false; provider.Hold = false; surfaceHeld = false; output?.Pause(); }
     }
 
     public async Task LoadSampleAsync(string path)
     {
+        var generation = Interlocked.Increment(ref loadGeneration);
         try
         {
             var samples = await Task.Run(() => DecodeMono(path));
+            if (disposed || generation != loadGeneration) return;
             provider.SetSample(samples); SampleName = Path.GetFileName(path).ToUpperInvariant(); program = 5; provider.Program = program;
             StateChanged?.Invoke(this, $"Sample loaded · {Path.GetFileName(path)}");
         }
@@ -77,7 +82,7 @@ public sealed class KaossPerformanceService : IDisposable
             case 0x02: provider.X = a.Data2 / 127f; break;
             case 0x01: provider.Y = a.Data2 / 127f; break;
             case 0x62: program = Math.Clamp(a.Data2 / 22, 0, 5); provider.Program = program; break;
-            case 0x07: provider.Volume = 0.1f + a.Data2 / 127f * 0.7f; break;
+            case 0x07: provider.Volume = a.Data2 / 127f * 0.8f; break;
             case 0x03: Bpm = 60 + a.Data2 / 127d * 140; provider.Bpm = Bpm; break;
         }
     }
@@ -88,17 +93,27 @@ public sealed class KaossPerformanceService : IDisposable
         if (delta is > .25 and < 2) Bpm = Math.Clamp(60 / delta, 40, 240);
         lastTap = now; provider.Bpm = Bpm;
     }
-    private static float[] DecodeMono(string path)
+    internal static float[] DecodeMono(string path)
     {
         using WaveStream reader = Path.GetExtension(path).Equals(".ogg", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(path).Equals(".flac", StringComparison.OrdinalIgnoreCase)
             ? new MediaFoundationReader(path) : new AudioFileReader(path);
-        var source = reader.ToSampleProvider();
-        var data = new List<float>(); var buffer = new float[source.WaveFormat.SampleRate * source.WaveFormat.Channels]; int read;
-        while ((read = source.Read(buffer, 0, buffer.Length)) > 0 && data.Count < source.WaveFormat.SampleRate * 60 * 10)
-            for (var i = 0; i < read; i += source.WaveFormat.Channels) data.Add(buffer[i]);
+        ISampleProvider source = reader.ToSampleProvider();
+        if (source.WaveFormat.Channels == 2) source = new StereoToMonoSampleProvider(source);
+        else if (source.WaveFormat.Channels != 1) throw new InvalidDataException("Use a mono or stereo sample.");
+        if (source.WaveFormat.SampleRate != 48000) source = new WdlResamplingSampleProvider(source, 48000);
+        const int maximumSamples = 48000 * 60 * 10;
+        var data = new List<float>();
+        var buffer = new float[4096];
+        while (data.Count < maximumSamples)
+        {
+            var read = source.Read(buffer, 0, Math.Min(buffer.Length, maximumSamples - data.Count));
+            if (read == 0) break;
+            for (var i = 0; i < read; i++) data.Add(float.IsFinite(buffer[i]) ? Math.Clamp(buffer[i], -1, 1) : 0);
+        }
+        if (data.Count == 0) throw new InvalidDataException("The audio file is empty.");
         return data.ToArray();
     }
-    public void Dispose() { SetActive(false); output?.Dispose(); }
+    public void Dispose() { disposed = true; Interlocked.Increment(ref loadGeneration); SetActive(false); output?.Dispose(); }
 }
 
 internal sealed class KaossWaveProvider : WaveProvider32
@@ -116,39 +131,43 @@ internal sealed class KaossWaveProvider : WaveProvider32
     public void SetSample(float[] value) { lock (sync) { sample = value; samplePosition = 0; } }
     public override int Read(float[] buffer, int offset, int count)
     {
-        var frames = count / 2; var rate = WaveFormat.SampleRate;
-        for (var n = 0; n < frames; n++)
+        lock (sync)
         {
+            var frames = count / 2; var rate = WaveFormat.SampleRate;
             var degree = Math.Clamp((int)(X * Scale.Length), 0, Scale.Length - 1);
             var frequency = 110 * Math.Pow(2, (Scale[degree] + Phrase * 12) / 12d);
-            phase = (phase + frequency / rate) % 1; arpPhase = (arpPhase + Bpm / 60d * 4 / rate) % 1;
-            var gate = Active && Gate && (!GateArp || arpPhase < (.12 + Y * .75));
-            double raw = 0;
-            if (gate)
+            for (var n = 0; n < frames; n++)
             {
-                raw = Program switch
+                phase = (phase + frequency / rate) % 1; arpPhase = (arpPhase + Bpm / 60d * 4 / rate) % 1;
+                var gate = Active && Gate && (!GateArp || arpPhase < (.12 + Y * .75));
+                double raw = 0;
+                if (gate)
                 {
-                    0 => Math.Sin(phase * Math.Tau),
-                    1 => Math.Tanh((2 * phase - 1) * (2 + Y * 6)),
-                    2 => (2 * phase - 1) * .75 + Math.Sin(phase * Math.Tau) * .25,
-                    3 => Math.Sin(phase * Math.Tau) * Math.Pow(1 - arpPhase, 3),
-                    4 => Random.Shared.NextDouble() * 2 - 1,
-                    5 => ReadSample(frequency / 220d),
-                    _ => 0,
-                };
+                    raw = Program switch
+                    {
+                        0 => Math.Sin(phase * Math.Tau),
+                        1 => Math.Tanh((2 * phase - 1) * (2 + Y * 6)),
+                        2 => (2 * phase - 1) * .75 + Math.Sin(phase * Math.Tau) * .25,
+                        3 => Math.Sin(phase * Math.Tau) * Math.Pow(1 - arpPhase, 3),
+                        4 => Random.Shared.NextDouble() * 2 - 1,
+                        5 => ReadSample(frequency / 220d),
+                        _ => 0,
+                    };
+                }
+                var alpha = .015 + Y * .35; filter += (raw - filter) * alpha;
+                var value = (float)(filter * Volume * .42); buffer[offset + n * 2] = value; buffer[offset + n * 2 + 1] = value;
             }
-            var alpha = .015 + Y * .35; filter += (raw - filter) * alpha;
-            var value = (float)(filter * Volume * .42); buffer[offset + n * 2] = value; buffer[offset + n * 2 + 1] = value;
+            if (count % 2 != 0) buffer[offset + count - 1] = 0;
+            return count;
         }
-        return count;
     }
     private double ReadSample(double speed)
     {
-        lock (sync)
-        {
-            if (sample is not { Length: > 1 }) return 0;
-            var index = (int)samplePosition % sample.Length; var value = sample[index];
-            samplePosition = (samplePosition + speed) % sample.Length; return value;
-        }
+        if (sample is not { Length: > 1 }) return 0;
+        var index = (int)samplePosition;
+        var next = index + 1 == sample.Length ? 0 : index + 1;
+        var value = sample[index] + (sample[next] - sample[index]) * (samplePosition - index);
+        samplePosition = (samplePosition + speed) % sample.Length;
+        return value;
     }
 }

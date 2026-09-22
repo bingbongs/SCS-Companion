@@ -65,6 +65,23 @@
                                             </StackPanel>
                                         </ScrollViewer>
                                     </TabViewItem>
+                                    <TabViewItem Header="Custom" IsClosable="False">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel Width="300" Spacing="12" Padding="2,6,8,12">
+                                                <TextBlock Text="CUSTOM SHORTCUTS" FontWeight="SemiBold" />
+                                                <TextBlock Text="Assign keyboard shortcuts to three banks. Select Custom, then press its mode button again to cycle banks. Shortcuts go to the focused application." TextWrapping="Wrap" FontSize="11" />
+                                                <ComboBox x:Name="CustomProfileComboBox" Header="Profile" HorizontalAlignment="Stretch" SelectionChanged="OnCustomSelectionChanged">
+                                                    <x:String>Profile 1</x:String><x:String>Profile 2</x:String><x:String>Profile 3</x:String>
+                                                </ComboBox>
+                                                <ComboBox x:Name="CustomControlComboBox" Header="Control" HorizontalAlignment="Stretch" SelectionChanged="OnCustomSelectionChanged" />
+                                                <Button Content="Learn control / Cancel" Click="OnCustomLearnClicked" />
+                                                <TextBox x:Name="CustomChordTextBox" Header="Shortcut" PlaceholderText="Ctrl+Shift+K" MaxLength="60" />
+                                                <TextBlock Text="Letters, digits, F1–F24, Enter, Space, Tab, arrows, PageUp, PageDown, PlayPause and volume keys. Optional Ctrl, Alt, Shift or Win. Leave blank to clear." TextWrapping="Wrap" FontSize="11" />
+                                                <Button Content="Save mapping" Click="OnCustomSaveClicked" />
+                                                <TextBlock x:Name="CustomMappingStatus" TextWrapping="Wrap" FontSize="11" AutomationProperties.LiveSetting="Polite" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabViewItem>
                                     <TabViewItem Header="Mouse" IsClosable="False">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                             <StackPanel Width="300" Spacing="14" Padding="2,6,8,12">
@@ -247,6 +264,7 @@
                     <Border x:Name="SoftButton4" Width="51" Height="51" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,12,16" Background="{StaticResource DeviceSurfaceBrush}" BorderBrush="#A5299BFF" BorderThickness="2" CornerRadius="26"><TextBlock x:Name="SoftButton4Text" Text="B14" TextWrapping="Wrap" TextAlignment="Center" FontSize="7" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock x:Name="SurfaceTitleText" Text="STANTOUCH" HorizontalAlignment="Center" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource StantonCyanBrush}" />
+                        <ProgressBar x:Name="LooperInputMeter" Width="100" Height="3" Minimum="0" Maximum="100" Visibility="Collapsed" AutomationProperties.Name="Looper microphone input level" />
                         <TextBlock x:Name="LastTouchedText" Text="WAITING FOR INPUT" HorizontalAlignment="Center" FontSize="7" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" MaxWidth="118" />
                     </StackPanel>
                     <Border x:Name="KaossDropTarget" Visibility="Collapsed" Width="142" Height="48" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,78,0,0"

@@ -42,10 +42,11 @@ public sealed class SimonGameService
         if (run != generation) return;
         sequence.Add(random.Next(4)); inputIndex = 0;
         StateChanged?.Invoke(this, new("watch", Score, HighScore, -1, false));
-        foreach (var pad in sequence)
+        foreach (var pad in sequence.ToArray())
         {
             if (run != generation) return;
             StateChanged?.Invoke(this, new("flash", Score, HighScore, pad, true)); await Task.Delay(Math.Max(170, 430 - Score * 8));
+            if (run != generation) return;
             StateChanged?.Invoke(this, new("flash", Score, HighScore, pad, false)); await Task.Delay(110);
         }
         if (run != generation) return;

@@ -19,8 +19,8 @@ public sealed class CompanionShortcutService
     private static readonly Dictionary<int, (ushort Key, ushort[] Mods, string Name)> Discord = new()
     {
         [0x6D] = (0x4D, [Ctrl, Shift], "Toggle mute"), [0x6E] = (0x44, [Ctrl, Shift], "Toggle deafen"),
-        [0x6F] = (0x55, [Ctrl, Shift], "Toggle voice mode"), [0x70] = (0x2F, [Ctrl], "Discord shortcuts"),
-        [0x2C] = (0x5D, [Ctrl], "Next channel"), [0x2E] = (0x5B, [Ctrl], "Previous channel"),
+        [0x6F] = (0x55, [Ctrl, Shift], "Toggle voice mode"), [0x70] = (0xBF, [Ctrl], "Discord shortcuts"),
+        [0x2C] = (0x28, [Alt], "Next channel"), [0x2E] = (0x26, [Alt], "Previous channel"),
         [0x30] = (0x46, [Ctrl], "Search"), [0x32] = (0x1B, [], "Dismiss"),
     };
 
@@ -53,17 +53,5 @@ public sealed class CompanionShortcutService
     public void ReleaseAll() { gainTouched = false; lastGain = null; }
 
     private static void SendMediaVolume(bool up) => SendChord(up ? (ushort)0xAF : (ushort)0xAE, []);
-    private static bool SendChord(ushort key, ushort[] modifiers)
-    {
-        var list = new List<Input>();
-        list.AddRange(modifiers.Select(k => Key(k, false))); list.Add(Key(key, false)); list.Add(Key(key, true));
-        for (var i = modifiers.Length - 1; i >= 0; i--) list.Add(Key(modifiers[i], true));
-        var data = list.ToArray();
-        return SendInput((uint)data.Length, data, Marshal.SizeOf<Input>()) == data.Length;
-    }
-    private static Input Key(ushort key, bool up) => new() { Type = InputKeyboard, Union = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = key, Flags = up ? KeyUp : 0 } } };
-    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
-    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Union; }
-    [StructLayout(LayoutKind.Explicit)] private struct InputUnion { [FieldOffset(0)] public KeyboardInput Keyboard; }
-    [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort VirtualKey, ScanCode; public uint Flags, Time; public nint ExtraInfo; }
+    private static bool SendChord(ushort key, params ushort[] modifiers) => KeyboardOutput.SendChord(key, modifiers);
 }

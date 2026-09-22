@@ -15,6 +15,7 @@ public sealed class MidiDeviceService : IDisposable
     private IMidiOutPort? outputPort;
     private string? connectedInputDeviceId;
     private string? connectedOutputDeviceId;
+    private bool disposed;
     private bool isRefreshing;
     private bool refreshAgain;
 
@@ -105,6 +106,7 @@ public sealed class MidiDeviceService : IDisposable
 
     private async Task RefreshConnectionAsync()
     {
+        if (disposed) return;
         if (isRefreshing)
         {
             refreshAgain = true;
@@ -119,6 +121,7 @@ public sealed class MidiDeviceService : IDisposable
                 refreshAgain = false;
                 var inputDevices = await DeviceInformation.FindAllAsync(MidiInPort.GetDeviceSelector());
                 var outputDevices = await DeviceInformation.FindAllAsync(MidiOutPort.GetDeviceSelector());
+                if (disposed) return;
                 var inputDevice = inputDevices.FirstOrDefault(candidate =>
                     candidate.Name.Contains("SCS.3d", StringComparison.OrdinalIgnoreCase));
                 var outputDevice = outputDevices.FirstOrDefault(candidate =>
@@ -138,6 +141,7 @@ public sealed class MidiDeviceService : IDisposable
                     try
                     {
                         inputPort = await MidiInPort.FromIdAsync(inputDevice.Id);
+                        if (disposed) { DisconnectInput(); return; }
                         if (inputPort is null)
                         {
                             PublishStatus("SCS.3d found Â· MIDI input unavailable");
@@ -165,6 +169,7 @@ public sealed class MidiDeviceService : IDisposable
                     try
                     {
                         outputPort = await MidiOutPort.FromIdAsync(outputDevice.Id);
+                        if (disposed) { DisconnectOutput(); return; }
                         if (outputPort is not null)
                         {
                             connectedOutputDeviceId = outputDevice.Id;
@@ -187,6 +192,10 @@ public sealed class MidiDeviceService : IDisposable
             }
             while (refreshAgain);
         }
+        catch (Exception exception)
+        {
+            if (!disposed) PublishStatus($"MIDI refresh unavailable · {exception.Message}");
+        }
         finally
         {
             isRefreshing = false;
@@ -199,7 +208,7 @@ public sealed class MidiDeviceService : IDisposable
         var bytes = new byte[reader.UnconsumedBufferLength];
         reader.ReadBytes(bytes);
         var activity = MidiActivity.FromRaw(bytes);
-        _ = dispatcherQueue.TryEnqueue(() => ActivityReceived?.Invoke(this, activity));
+        _ = dispatcherQueue.TryEnqueue(() => { if (!disposed) ActivityReceived?.Invoke(this, activity); });
     }
 
     private void PublishStatus(string status)
@@ -233,6 +242,8 @@ public sealed class MidiDeviceService : IDisposable
 
     public void Dispose()
     {
+        if (disposed) return;
+        disposed = true;
         StopWatcher(ref inputWatcher);
         StopWatcher(ref outputWatcher);
 

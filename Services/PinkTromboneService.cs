@@ -13,16 +13,22 @@ public sealed class PinkTromboneService : IDisposable
     public PinkTromboneService(string? outputDeviceId) => ConfigureOutput(outputDeviceId);
     public void ConfigureOutput(string? id)
     {
-        var active = provider.Active; output?.Stop(); output?.Dispose();
+        var active = provider.Active; output?.Stop(); output?.Dispose(); output = null;
         try
         {
             using var e = new MMDeviceEnumerator(); MMDevice? d = string.IsNullOrWhiteSpace(id) ? null : e.GetDevice(id);
             output = d is null ? new WasapiOut(AudioClientShareMode.Shared, true, 45) : new WasapiOut(d, AudioClientShareMode.Shared, true, 45);
             output.Init(provider); d?.Dispose(); if (active) output.Play();
         }
-        catch (Exception ex) { StateChanged?.Invoke(this, $"Vocal audio unavailable · {ex.Message}"); }
+        catch (Exception ex) { output?.Dispose(); output = null; StateChanged?.Invoke(this, $"Vocal audio unavailable · {ex.Message}"); }
     }
-    public void SetActive(bool value) { provider.Active = value; provider.Gate = value && provider.Hold; if (value) output?.Play(); else output?.Pause(); }
+    public void SetActive(bool value)
+    {
+        provider.Active = value;
+        if (!value) provider.Hold = false;
+        provider.Gate = value && provider.Hold;
+        if (value) output?.Play(); else output?.Pause();
+    }
     public void Handle(MidiActivity a, bool enabled)
     {
         if (!enabled) { provider.Gate = false; return; }
@@ -33,6 +39,8 @@ public sealed class PinkTromboneService : IDisposable
             if (!down) return;
             if (a.Data1 == 0x2C) { provider.Hold = !provider.Hold; provider.Gate = provider.Hold; }
             else if (a.Data1 == 0x2E) provider.Nasal = !provider.Nasal;
+            else if (a.Data1 == 0x30) provider.Pitch = Math.Max(70, provider.Pitch / (float)Math.Pow(2, 1d / 12));
+            else if (a.Data1 == 0x32) provider.Pitch = Math.Min(320, provider.Pitch * (float)Math.Pow(2, 1d / 12));
             else if (a.Data1 is >= 0x6D and <= 0x70) provider.Voice = a.Data1 - 0x6D;
             StateChanged?.Invoke(this, $"{VoiceName} · {(provider.Nasal ? "NASAL" : "ORAL")}"); return;
         }
@@ -43,7 +51,7 @@ public sealed class PinkTromboneService : IDisposable
             case 0x01: provider.Mouth = a.Data2 / 127f; break;
             case 0x62: provider.Pitch = 70 + a.Data2 / 127f * 250; break;
             case 0x03: provider.Pitch = 70 + a.Data2 / 127f * 250; break;
-            case 0x07: provider.Volume = .1f + a.Data2 / 127f * .7f; break;
+            case 0x07: provider.Volume = a.Data2 / 127f * .8f; break;
         }
     }
     public void Dispose() { provider.Active = false; output?.Dispose(); }

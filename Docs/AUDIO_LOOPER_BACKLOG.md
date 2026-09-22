@@ -1,30 +1,12 @@
-# Audio looper backlog
+# Audio looper status
 
-Audio Looper is planned as a repeated-press submode of the physical `LOOP` button, alongside the existing productivity and macro profiles.
+The four-track looper is implemented. See [the current control guide](FOUR_TRACK_LOOPER.md) and [review results](PROJECT_REVIEW.md). This file previously described an obsolete single-track plan.
 
-## Intended first version
+Completed: four independent loop lengths, overdub/undo, bounded native-format capture, manual/estimated tempo, output/input selection, live effects, input metering, persistent sessions, safe stop, and device-change refresh.
 
-- Capture the current Windows default microphone through WASAPI shared mode.
-- Keep the loop local and in memory with an explicit maximum duration.
-- Provide Record, Play/Stop, Overdub, Undo last layer, Clear, and input-level feedback.
-- Follow Windows default-device changes automatically, with a manual device override in settings.
-- Disable monitoring by default to prevent speaker-to-microphone feedback; make monitoring and its output device explicit.
-- Release and stop audio cleanly on mode changes, disconnect, suspend, safe stop, and app exit.
+Remaining audio roadmap:
 
-## Candidate SCS.3d layout
-
-| Control | Initial action |
-| --- | --- |
-| PLAY | Play / stop loop |
-| CUE | Start / stop recording |
-| SYNC | Toggle overdub |
-| TAP | Tap tempo / quantized-length option |
-| B11 | Undo last layer |
-| B12 | Redo or duplicate layer |
-| B13 | Clear, with hold confirmation |
-| B14 | Monitoring toggle |
-| GAIN | Input gain |
-| PITCH | Loop output level |
-| Main surface | Loop position or layer mix |
-
-Implementation follows the core input, output-safety, and LED state engines so recording state can be represented reliably on both the app and hardware.
+- Pitch-preserving time stretching (tempo still changes pitch).
+- Measured round-trip latency calibration; current compensation is a configurable estimate.
+- Loop import/export and multi-session management.
+- Hardware soak tests across VoiceMeeter, USB microphones, Bluetooth output, and hot-unplug scenarios.

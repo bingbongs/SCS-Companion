@@ -42,6 +42,8 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Remove="Tests\**\*.cs" />
+        <None Remove="Tests\**\*" />
         <None Remove="SCSCompanion.slnx" />
         <None Update="Profiles\**\*.*" CopyToOutputDirectory="PreserveNewest" />
         <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
@@ -51,8 +53,8 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260529003" />
-        <PackageReference Include="Microsoft.Web.WebView2" Version="1.*" />
-        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.*" />
+        <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2270" />
         <PackageReference Include="NAudio" Version="2.3.0" />
 
         <Manifest Include="$(ApplicationManifest)" />

@@ -53,4 +53,4 @@ Press `LOOP` a third time for `Meetings`. Its microphone controls operate on the
 | B13 | Toggle default microphone mute |
 | B14 | Force default microphone live |
 
-B13 remains lit while the endpoint is muted, both in the companion and on the controller. Applications configured to use a different input device or an exclusive audio path may not follow the Windows default endpoint. Streaming remains a planned bank.
+B13 remains lit while the endpoint is muted, both in the companion and on the controller. Applications configured to use a different input device or an exclusive audio path may not follow the Windows default endpoint. Streaming is documented in [Custom and shortcut banks](CUSTOM_AND_SHORTCUTS.md).

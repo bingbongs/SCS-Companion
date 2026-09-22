@@ -39,11 +39,11 @@ public partial class MainPage : Page
 
     private readonly Dictionary<string, ModeDefinition> modes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["DJ"] = new("DJ", "FX", 0x20, "Software-specific performance and utility mappings", ["Auto", "Serato", "Mixxx", "VirtualDJ", "Traktor", "rekordbox", "djay Pro"], ColorHelper.FromArgb(255, 255, 83, 92)),
+        ["DJ"] = new("DJ", "FX", 0x20, "Software-specific performance and utility mappings", ["Serato", "Mixxx", "VirtualDJ"], ColorHelper.FromArgb(255, 255, 83, 92)),
         ["Media"] = new("Media", "EQ", 0x26, "System, per-app, microphone, and playback controls", ["System", "Per-app mixer", "Microphone", "Playback"], ColorHelper.FromArgb(255, 66, 214, 220)),
-        ["Productivity"] = new("Productivity", "LOOP", 0x22, "Windows, browser, meeting, macro, and audio looping profiles", ["Windows", "Browser", "Meetings", "Streaming", "Audio looper"], ColorHelper.FromArgb(255, 41, 155, 255)),
+        ["Productivity"] = new("Productivity", "LOOP", 0x22, "Windows, browser, meeting, and streaming shortcuts", ["Windows", "Browser", "Meetings", "Streaming"], ColorHelper.FromArgb(255, 41, 155, 255)),
         ["Looper"] = new("Looper", "LOOP", 0x22, "Four synchronized microphone loop tracks with momentary punch effects", ["Four-track"], ColorHelper.FromArgb(255, 157, 117, 255)),
-        ["VRChat"] = new("VRChat", "TRIG", 0x28, "Native OSC inputs and compatibility-aware avatar actions", ["Auto", "Desktop", "PC VR", "Avatar actions"], ColorHelper.FromArgb(255, 157, 117, 255)),
+        ["VRChat"] = new("VRChat", "TRIG", 0x28, "Native OSC inputs and compatibility-aware avatar actions", ["Auto", "Desktop", "PC VR"], ColorHelper.FromArgb(255, 157, 117, 255)),
         ["Mouse"] = new("Mouse", "VINYL", 0x24, "Directional trackpad and rotary pointer profiles", ["Trackpad", "Trackball", "Presentation"], ColorHelper.FromArgb(255, 41, 155, 255)),
         ["Custom"] = new("Custom", "DECK", 0x2A, "User-created mappings and Learn profiles", ["Profile 1", "Profile 2", "Profile 3"], ColorHelper.FromArgb(255, 255, 83, 92)),
         ["Kaoss"] = new("Kaoss", "FX", 0x20, "Scale-locked touch synthesis and sample manipulation", ["Performance"], ColorHelper.FromArgb(255, 255, 70, 181)),
@@ -74,6 +74,12 @@ public partial class MainPage : Page
     };
 
     private readonly Dictionary<byte, string> noteToMode;
+    private readonly CustomMappingService customMappingService;
+    private readonly DispatcherTimer audioDeviceTimer;
+    private string audioRouteSignature = "";
+    private bool learningCustomControl;
+    private int learnedReleaseNote = -1;
+    private bool closed;
     private readonly DispatcherTimer highlightTimer;
     private readonly DispatcherTimer looperLedTimer;
     private readonly DispatcherTimer tempoLedTimer;
@@ -142,6 +148,13 @@ public partial class MainPage : Page
         tempoLedTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
         tempoLedTimer.Tick += OnTempoLedTimerTick;
 
+        customMappingService = new CustomMappingService();
+        customMappingService.ActionReported += OnCompanionActionReported;
+        CustomProfileComboBox.SelectedIndex = 0;
+        CustomControlComboBox.ItemsSource = CustomMappingService.Controls;
+        CustomControlComboBox.SelectedIndex = 0;
+        audioDeviceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        audioDeviceTimer.Tick += OnAudioDeviceTimerTick;
         captureService = new MidiCaptureService();
         mouseTrackpadEngine = new MouseTrackpadEngine();
         mouseTrackpadEngine.ActionReported += OnMouseActionReported;
@@ -177,6 +190,8 @@ public partial class MainPage : Page
         pinkTromboneService.StateChanged += OnKaossStateChanged;
         tempoLedTimer.Start();
         InitializeAudioSettings();
+        audioRouteSignature = GetAudioRouteSignature();
+        audioDeviceTimer.Start();
 
         vrChatOscService = new VrChatOscService();
         vrChatOscService.StatusChanged += OnVrChatOscStatusChanged;
@@ -192,6 +207,50 @@ public partial class MainPage : Page
         midiService.Start();
         djMidiService.Start();
         vrChatOscService.Start();
+    }
+
+    private void OnCustomSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (customMappingService is null || CustomProfileComboBox.SelectedIndex < 0 || CustomControlComboBox.SelectedIndex < 0) return;
+        CustomChordTextBox.Text = customMappingService.GetChord(CustomProfileComboBox.SelectedIndex, CustomControlComboBox.SelectedIndex);
+    }
+
+    private void OnCustomSaveClicked(object sender, RoutedEventArgs e)
+    {
+        learningCustomControl = false;
+        customMappingService.SetChord(CustomProfileComboBox.SelectedIndex, CustomControlComboBox.SelectedIndex, CustomChordTextBox.Text, out var message);
+        CustomMappingStatus.Text = message;
+        UpdateControlLabels();
+    }
+
+    private void OnCustomLearnClicked(object sender, RoutedEventArgs e)
+    {
+        learningCustomControl = !learningCustomControl;
+        CustomMappingStatus.Text = learningCustomControl ? "Press B11–B14 or PLAY/CUE/SYNC/TAP. This press only selects the mapping." : "Learn cancelled.";
+    }
+
+    private string GetAudioRouteSignature()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        string Resolve(string? id, DataFlow flow)
+        {
+            try { using var device = id is null ? enumerator.GetDefaultAudioEndpoint(flow, Role.Console) : enumerator.GetDevice(id); return $"{device.ID}:{device.State}"; }
+            catch { return "unavailable"; }
+        }
+        return Resolve(audioPreferences.InputDeviceId, DataFlow.Capture) + "|" + Resolve(audioPreferences.OutputDeviceId, DataFlow.Render);
+    }
+
+    private void OnAudioDeviceTimerTick(object? sender, object e)
+    {
+        if (closed) return;
+        var signature = GetAudioRouteSignature();
+        if (signature == audioRouteSignature) return;
+        audioRouteSignature = signature;
+        audioLooperService.ConfigureAudioDevices(audioPreferences.InputDeviceId, audioPreferences.OutputDeviceId, audioPreferences.SyncCompensationMilliseconds);
+        kaossService.ConfigureOutput(audioPreferences.OutputDeviceId);
+        pinkTromboneService.ConfigureOutput(audioPreferences.OutputDeviceId);
+        audioLooperService.SetActive(routingEnabled && activeMode == "Looper");
+        StatusText.Text = "Audio device change · routing refreshed";
     }
 
     private void OnModeClicked(object sender, RoutedEventArgs e)
@@ -222,6 +281,7 @@ public partial class MainPage : Page
         foreach (var (note, moduleName) in noteToMode)
         {
             GetSlotButton(note).Tag = moduleName;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(GetSlotButton(note), $"{SlotLabels[note]} hardware button, {moduleName} mode");
             GetModuleSelector(note).SelectedItem = moduleName;
             GetSlotFunctionText(note).Text = CompactLabel(moduleName);
         }
@@ -305,6 +365,7 @@ public partial class MainPage : Page
             updatingAudioPreferences = false;
         }
         settingsService.SaveAudioPreferences(audioPreferences);
+        audioRouteSignature = GetAudioRouteSignature();
     }
 
     private static void PopulateAudioDeviceSelector(ComboBox selector, MMDeviceEnumerator enumerator, DataFlow flow, string? selectedId)
@@ -351,6 +412,7 @@ public partial class MainPage : Page
             : (int)Math.Round(SyncCompensationNumberBox.Value);
         audioPreferences = new AudioPreferences(inputId, outputId, compensation);
         settingsService.SaveAudioPreferences(audioPreferences);
+        audioRouteSignature = GetAudioRouteSignature();
         audioLooperService.ConfigureAudioDevices(inputId, outputId, compensation);
         kaossService.ConfigureOutput(outputId);
         pinkTromboneService.ConfigureOutput(outputId);
@@ -500,6 +562,7 @@ public partial class MainPage : Page
             return;
         }
 
+        customMappingService.ReleaseAll();
         mouseTrackpadEngine.ReleaseAll();
         djMidiService.ReleaseAll();
         productivityOutputService.ReleaseAll();
@@ -588,28 +651,55 @@ public partial class MainPage : Page
             }
             else if (pink)
             {
-                PlayButtonText.Text="CHEST"; CueButtonText.Text="BRIGHT"; SyncButtonText.Text="WHISPER"; TapButtonText.Text="ROBOT";
-                SoftButton1Text.Text="HOLD"; SoftButton2Text.Text="NASAL"; SoftButton3Text.Text="PITCH -"; SoftButton4Text.Text="PITCH +";
+                PlayButtonText.Text = "CHEST"; CueButtonText.Text = "BRIGHT"; SyncButtonText.Text = "WHISPER"; TapButtonText.Text = "ROBOT";
+                SoftButton1Text.Text = "HOLD"; SoftButton2Text.Text = "NASAL"; SoftButton3Text.Text = "PITCH -"; SoftButton4Text.Text = "PITCH +";
             }
             else if (activeMode == "Audacity")
             {
-                PlayButtonText.Text="RECORD"; CueButtonText.Text="PLAY"; SyncButtonText.Text="PAUSE"; TapButtonText.Text="STOP";
-                SoftButton1Text.Text="UNDO"; SoftButton2Text.Text="REDO"; SoftButton3Text.Text="ZOOM +"; SoftButton4Text.Text="ZOOM -";
+                PlayButtonText.Text = "RECORD"; CueButtonText.Text = "PLAY"; SyncButtonText.Text = "PAUSE"; TapButtonText.Text = "STOP";
+                SoftButton1Text.Text = "UNDO"; SoftButton2Text.Text = "REDO"; SoftButton3Text.Text = "ZOOM +"; SoftButton4Text.Text = "ZOOM -";
             }
             else if (activeMode == "Discord")
             {
-                PlayButtonText.Text="MUTE"; CueButtonText.Text="DEAFEN"; SyncButtonText.Text="VOICE"; TapButtonText.Text="SHORTCUTS";
-                SoftButton1Text.Text="NEXT"; SoftButton2Text.Text="PREV"; SoftButton3Text.Text="SEARCH"; SoftButton4Text.Text="DISMISS";
+                PlayButtonText.Text = "MUTE"; CueButtonText.Text = "DEAFEN"; SyncButtonText.Text = "VOICE"; TapButtonText.Text = "SHORTCUTS";
+                SoftButton1Text.Text = "NEXT"; SoftButton2Text.Text = "PREV"; SoftButton3Text.Text = "SEARCH"; SoftButton4Text.Text = "DISMISS";
             }
             else if (activeMode == "Simon")
             {
-                PlayButtonText.Text="BLUE"; CueButtonText.Text="RED"; SyncButtonText.Text="PURPLE"; TapButtonText.Text="CYAN";
-                SoftButton1Text.Text=simonService.IsPlaying?"PLAYING":"START"; SoftButton2Text.Text=""; SoftButton3Text.Text=$"SCORE\n{simonState.Score}"; SoftButton4Text.Text=$"BEST\n{simonState.HighScore}";
+                PlayButtonText.Text = "BLUE"; CueButtonText.Text = "RED"; SyncButtonText.Text = "PURPLE"; TapButtonText.Text = "CYAN";
+                SoftButton1Text.Text = simonService.IsPlaying ? "PLAYING" : "START"; SoftButton2Text.Text = ""; SoftButton3Text.Text = $"SCORE\n{simonState.Score}"; SoftButton4Text.Text = $"BEST\n{simonState.HighScore}";
+            }
+            else if (activeMode == "Custom")
+            {
+                var customLabels = new[] { SoftButton1Text, SoftButton2Text, SoftButton3Text, SoftButton4Text, PlayButtonText, CueButtonText, SyncButtonText, TapButtonText };
+                for (var i = 0; i < customLabels.Length; i++)
+                {
+                    var chord = customMappingService.GetChord(activeSubmode, i);
+                    customLabels[i].Text = string.IsNullOrEmpty(chord) ? "SETUP" : (chord.Length > 12 ? chord[..11] + "…" : chord).ToUpperInvariant();
+                    ToolTipService.SetToolTip(customLabels[i], string.IsNullOrEmpty(chord) ? "Assign in Settings → Custom" : chord);
+                }
+            }
+            else if (activeMode == "Media" && modes[activeMode].Submodes[activeSubmode] == "Per-app mixer")
+            {
+                SoftButton1Text.Text = "PREV APP"; SoftButton2Text.Text = "NEXT APP";
+                SoftButton3Text.Text = "LEVEL −"; SoftButton4Text.Text = "LEVEL +";
+                PlayButtonText.Text = "MUTE"; TapButtonText.Text = "MUTE";
+            }
+            else if (activeMode == "Productivity" && modes[activeMode].Submodes[activeSubmode] == "Streaming")
+            {
+                SoftButton1Text.Text = "F13"; SoftButton2Text.Text = "F14"; SoftButton3Text.Text = "F15"; SoftButton4Text.Text = "F16";
+                PlayButtonText.Text = "F17"; CueButtonText.Text = "F18"; SyncButtonText.Text = "F19"; TapButtonText.Text = "F20";
+                SurfaceTitleText.Text = "CTRL + ALT";
+            }
+            else if (activeMode == "Mouse" && modes[activeMode].Submodes[activeSubmode] == "Presentation")
+            {
+                SoftButton1Text.Text = "PREV"; SoftButton2Text.Text = "NEXT"; SoftButton3Text.Text = "BLACK"; SoftButton4Text.Text = "WHITE";
+                PlayButtonText.Text = "START"; CueButtonText.Text = "EXIT"; SyncButtonText.Text = "PREV"; TapButtonText.Text = "NEXT";
             }
             else if (activeMode == "Mouse")
             {
-                SoftButton1Text.Text="LEFT"; SoftButton2Text.Text="RIGHT"; SoftButton3Text.Text=mouseTrackpadEngine.IsMacroRecording?"REC...":mouseTrackpadEngine.HasMacro?"RE-REC":"REC"; SoftButton4Text.Text="BACK";
-                PlayButtonText.Text=mouseTrackpadEngine.IsMacroPlaying?"STOP MACRO":mouseTrackpadEngine.HasMacro?"PLAY MACRO":"EMPTY";
+                SoftButton1Text.Text = "LEFT"; SoftButton2Text.Text = "RIGHT"; SoftButton3Text.Text = mouseTrackpadEngine.IsMacroRecording ? "REC..." : mouseTrackpadEngine.HasMacro ? "RE-REC" : "REC"; SoftButton4Text.Text = "BACK";
+                PlayButtonText.Text = mouseTrackpadEngine.IsMacroPlaying ? "STOP MACRO" : mouseTrackpadEngine.HasMacro ? "PLAY MACRO" : "EMPTY";
             }
             else { SoftButton1Text.Text = "B11"; SoftButton2Text.Text = "B12"; SoftButton3Text.Text = "B13"; SoftButton4Text.Text = "B14"; }
             return;
@@ -621,7 +711,8 @@ public partial class MainPage : Page
             var action = !audioLooperService.HasTrackAudio(index)
                 ? "REC"
                 : audioLooperService.GetTrackState(index) == "STOPPED" ? "PLAY" : "STOP";
-            if (audioLooperService.IsRecording && audioLooperService.SelectedTrack == index) action = "STOP";
+            if (audioLooperService.IsRecording && audioLooperService.RecordingTrack == index) action = "STOP";
+            if (audioLooperService.IsFinalizing && audioLooperService.RecordingTrack == index) action = "WAIT";
             if (audioLooperService.EraseArmedTrack == index) action = "ERASE";
             labels[index].Text = $"T{index + 1} {action}";
         }
@@ -662,8 +753,15 @@ public partial class MainPage : Page
             : status.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ? "Offline" : "Finding…";
         ToolTipService.SetToolTip(ConnectionText, status);
         ConnectionDot.Fill = new SolidColorBrush(connected ? ColorHelper.FromArgb(255, 66, 214, 220) : ColorHelper.FromArgb(255, 255, 83, 92));
-        if (!connected)
+        if (connected)
         {
+            audioLooperService.SetActive(routingEnabled && activeMode == "Looper");
+            kaossService.SetActive(routingEnabled && activeMode == "Kaoss");
+            pinkTromboneService.SetActive(routingEnabled && activeMode == "Pink Trombone");
+        }
+        else
+        {
+            customMappingService.ReleaseAll();
             mouseTrackpadEngine.ReleaseAll();
             djMidiService.ReleaseAll();
             productivityOutputService.ReleaseAll();
@@ -686,6 +784,20 @@ public partial class MainPage : Page
 
     private void OnMidiActivityReceived(object? sender, MidiActivity activity)
     {
+        if (closed) return;
+        if (activity.Kind == "Note off" && activity.Data1 == learnedReleaseNote)
+        {
+            learnedReleaseNote = -1;
+            return;
+        }
+        if (learningCustomControl && activity.Kind == "Note on" && Array.IndexOf(CustomMappingService.Notes, activity.Data1) is var learned && learned >= 0)
+        {
+            learningCustomControl = false;
+            learnedReleaseNote = activity.Data1;
+            CustomControlComboBox.SelectedIndex = learned;
+            CustomMappingStatus.Text = $"Selected {CustomMappingService.Controls[learned]}. Enter a shortcut and Save.";
+            return;
+        }
         captureService.Record(activity);
         AddActivity($"{activity.Timestamp:HH:mm:ss.fff}  MIDI CH{activity.Channel:D2}  {activity.Description,-26} [{activity.RawHex}]");
         LastTouchedText.Text = activity.Description;
@@ -706,6 +818,7 @@ public partial class MainPage : Page
         pinkTromboneService.Handle(activity, routingEnabled && activeMode == "Pink Trombone");
         shortcutService.Handle(activity, routingEnabled && activeMode is "Audacity" or "Discord", activeMode);
         simonService.Handle(activity, routingEnabled && activeMode == "Simon");
+        customMappingService.Handle(activity, routingEnabled && activeMode == "Custom", activeSubmode);
         vrChatOscService.Handle(activity, routingEnabled && activeMode == "VRChat", submode);
         var menuMouse = routingEnabled && activeMode == "VRChat" && vrChatOscService.MenuPointerActive;
         if (routingEnabled && activeMode == "Mouse")
@@ -792,7 +905,7 @@ public partial class MainPage : Page
         {
             return looperFlashOn ? (byte)0x01 : (byte)0x00;
         }
-        if (audioLooperService.IsRecording && audioLooperService.SelectedTrack == trackIndex)
+        if (audioLooperService.IsRecording && audioLooperService.RecordingTrack == trackIndex)
         {
             return looperFlashOn ? (byte)0x01 : (byte)0x00;
         }
@@ -1024,6 +1137,8 @@ public partial class MainPage : Page
 
     private void OnTempoLedTimerTick(object? sender, object e)
     {
+        LooperInputMeter.Visibility = activeMode == "Looper" ? Visibility.Visible : Visibility.Collapsed;
+        if (activeMode == "Looper") LooperInputMeter.Value = audioLooperService.InputPeak * 100;
         var showTempo = activeMode == "Looper" && !audioLooperService.IsShiftHeld && !audioLooperService.IsDubMode;
         var nextPulse = showTempo && audioLooperService.BeatPhase < 0.16d;
         if (nextPulse == tempoPulseOn) return;
@@ -1048,6 +1163,7 @@ public partial class MainPage : Page
     {
         if (!active)
         {
+            customMappingService.ReleaseAll();
             mouseTrackpadEngine.ReleaseAll();
         }
 
@@ -1062,6 +1178,7 @@ public partial class MainPage : Page
         routingEnabled = !routingEnabled;
         if (!routingEnabled)
         {
+            customMappingService.ReleaseAll();
             mouseTrackpadEngine.ReleaseAll();
             djMidiService.ReleaseAll();
             productivityOutputService.ReleaseAll();
@@ -1096,6 +1213,7 @@ public partial class MainPage : Page
         var kaossLive = routingEnabled && activeMode == "Kaoss";
         var pinkLive = routingEnabled && activeMode == "Pink Trombone";
         var shortcutLive = routingEnabled && activeMode is "Audacity" or "Discord";
+        var customLive = routingEnabled && activeMode == "Custom";
         var simonLive = routingEnabled && activeMode == "Simon";
         var menuMouse = vrLive && vrChatOscService.MenuPointerActive;
         var productivityLabel = submode switch
@@ -1105,14 +1223,14 @@ public partial class MainPage : Page
             _ => "WINDOWS",
         };
         var looperLabel = audioLooperService.IsRecording
-            ? $"REC T{audioLooperService.SelectedTrack + 1}"
+            ? $"REC T{audioLooperService.RecordingTrack + 1}"
             : audioLooperService.LiveEffectName != "OFF"
                 ? $"LIVE {audioLooperService.LiveEffectName} · {audioLooperService.Bpm:0} BPM"
                 : $"T{audioLooperService.SelectedTrack + 1} · {audioLooperService.GetTrackSteps(audioLooperService.SelectedTrack)} STEP · {audioLooperService.Bpm:0} BPM";
-        RoutingStateText.Text = !routingEnabled ? "PAUSED" : menuMouse ? "VR MENU MOUSE" : mouseLive ? "MOUSE LIVE" : djLive ? "DJ MIDI" : mediaLive ? "MEDIA" : looperLive ? looperLabel : kaossLive ? $"KAOSS · {kaossService.ProgramName}" : pinkLive ? "VOCAL TRACT" : shortcutLive ? activeMode.ToUpperInvariant() : simonLive ? $"SIMON · {simonState.Score}" : productivityLive ? productivityLabel : vrLive ? "VR OSC" : "OBSERVE";
+        RoutingStateText.Text = !routingEnabled ? "PAUSED" : menuMouse ? "VR MENU MOUSE" : mouseLive ? "MOUSE LIVE" : djLive ? "DJ MIDI" : mediaLive ? "MEDIA" : looperLive ? looperLabel : kaossLive ? $"KAOSS · {kaossService.ProgramName}" : pinkLive ? "VOCAL TRACT" : shortcutLive ? activeMode.ToUpperInvariant() : customLive ? "CUSTOM LIVE" : simonLive ? $"SIMON · {simonState.Score}" : productivityLive ? productivityLabel : vrLive ? "VR OSC" : "OBSERVE";
         RoutingDot.Fill = new SolidColorBrush(!routingEnabled
             ? ColorHelper.FromArgb(255, 255, 83, 92)
-            : mouseLive || djLive || mediaLive || looperLive || kaossLive || pinkLive || shortcutLive || simonLive || productivityLive || vrLive
+            : mouseLive || djLive || mediaLive || looperLive || kaossLive || pinkLive || shortcutLive || simonLive || customLive || productivityLive || vrLive
                 ? ColorHelper.FromArgb(255, 66, 214, 220)
                 : ColorHelper.FromArgb(255, 130, 136, 145));
     }
@@ -1261,7 +1379,7 @@ public partial class MainPage : Page
             if (audioLooperService is not null && activeMode == "Looper")
             {
                 activeLooperTrack = audioLooperService.EraseArmedTrack == index ||
-                                    (audioLooperService.IsRecording && audioLooperService.SelectedTrack == index)
+                                    (audioLooperService.IsRecording && audioLooperService.RecordingTrack == index)
                     ? looperFlashOn
                     : audioLooperService.HasTrackAudio(index);
             }
@@ -1450,6 +1568,7 @@ public partial class MainPage : Page
     private void OnPanicClicked(object sender, RoutedEventArgs e)
     {
         routingEnabled = false;
+        customMappingService.ReleaseAll();
         mouseTrackpadEngine.ReleaseAll();
         djMidiService.ReleaseAll();
         productivityOutputService.ReleaseAll();
@@ -1463,13 +1582,23 @@ public partial class MainPage : Page
         UpdateHardwareModeLeds();
         PreviewInfoBar.Severity = InfoBarSeverity.Warning;
         PreviewInfoBar.Title = "Routing paused";
-        PreviewInfoBar.Message = "Safe stop requested. All future output modules will release held state here.";
+        PreviewInfoBar.Message = "Audio and controller output stopped. Resume routing when ready.";
         StatusText.Text = "Safe stop active · observation continues";
         AddActivity($"{DateTime.Now:HH:mm:ss.fff}  SAFETY   Release all outputs");
     }
 
-    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    private void OnPageUnloaded(object sender, RoutedEventArgs e) => Shutdown();
+
+    public void Shutdown()
     {
+        if (closed) return;
+        closed = true;
+        tempoLedTimer.Stop();
+        audioDeviceTimer.Stop();
+        simonService.Stop();
+        productivityOutputService.ReleaseAll();
+        shortcutService.ReleaseAll();
+        customMappingService.ReleaseAll();
         midiService.Dispose();
         djMidiService.Dispose();
         mediaOutputService.Dispose();

@@ -58,7 +58,7 @@ public sealed class MouseTrackpadEngine : IDisposable
 
     public static bool SupportsSubmode(string submode) =>
         string.Equals(submode, TrackpadSubmode, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(submode, TrackballSubmode, StringComparison.OrdinalIgnoreCase);
+        string.Equals(submode, TrackballSubmode, StringComparison.OrdinalIgnoreCase) || submode == "Presentation";
 
     public void Handle(MidiActivity activity, bool enabled, string submode)
     {
@@ -68,6 +68,15 @@ public sealed class MouseTrackpadEngine : IDisposable
             return;
         }
 
+        if (submode == "Presentation")
+        {
+            if (activity.Kind == "Note on")
+            {
+                ushort key = activity.Data1 switch { 0x6D => 0x74, 0x6E => 0x1B, 0x6F => 0x21, 0x70 => 0x22, 0x2C => 0x25, 0x2E => 0x27, 0x30 => 0x42, 0x32 => 0x57, _ => 0 };
+                if (key != 0) Report(KeyboardOutput.SendChord(key), "Presentation shortcut");
+            }
+            return;
+        }
         lock (stateLock)
         {
             activeSubmode = submode;
@@ -144,54 +153,103 @@ public sealed class MouseTrackpadEngine : IDisposable
 
     public void ReleaseAll()
     {
-        ResetTouches();
-        output.ReleaseAll();
+        lock (stateLock)
+        {
+            StopMacro();
+            IsMacroRecording = false;
+            ResetTouches();
+            output.ReleaseAll();
+        }
     }
 
     private void HandleMacroButton(bool down, DateTimeOffset timestamp)
     {
-        if (down) { b13Down = timestamp; return; }
-        if (timestamp - b13Down >= TimeSpan.FromMilliseconds(850))
+        lock (stateLock)
         {
-            StopMacro(); IsMacroRecording = false; macro.Clear(); ActionReported?.Invoke(this, "Macro erased"); return;
+            if (down) { b13Down = timestamp; return; }
+            if (timestamp - b13Down >= TimeSpan.FromMilliseconds(850))
+            {
+                StopMacro(); IsMacroRecording = false; macro.Clear(); ActionReported?.Invoke(this, "Macro erased"); return;
+            }
+            if (!IsMacroRecording)
+            {
+                StopMacro(); macro.Clear(); macroStarted = timestamp; IsMacroRecording = true; ActionReported?.Invoke(this, "Macro recording");
+            }
+            else
+            {
+                IsMacroRecording = false; ActionReported?.Invoke(this, $"Macro captured · {macro.Count} actions"); _ = PlayMacroAsync();
+            }
         }
-        if (!IsMacroRecording)
-        {
-            StopMacro(); macro.Clear(); macroStarted = timestamp; IsMacroRecording = true; ActionReported?.Invoke(this, "Macro recording");
-        }
-        else
-        {
-            IsMacroRecording = false; ActionReported?.Invoke(this, $"Macro captured · {macro.Count} actions"); _ = PlayMacroAsync();
-        }
+
     }
 
     private void Capture(string kind, int a, int b = 0)
     {
-        if (IsMacroRecording) macro.Add(new MacroAction(DateTimeOffset.Now - macroStarted, kind, a, b));
+        lock (stateLock)
+        {
+            if (!IsMacroRecording) return;
+            var elapsed = DateTimeOffset.Now - macroStarted;
+            if (elapsed > TimeSpan.FromMinutes(5) || macro.Count >= 20000)
+            {
+                IsMacroRecording = false;
+                ActionReported?.Invoke(this, "Macro limit reached · recording stopped");
+                return;
+            }
+            if (macro.Count > 0 && elapsed < macro[^1].At) elapsed = macro[^1].At;
+            macro.Add(new MacroAction(elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed, kind, a, b));
+        }
     }
 
     private async Task PlayMacroAsync()
     {
         if (macro.Count == 0 || IsMacroPlaying) return;
         playbackCancellation = new CancellationTokenSource(); var token = playbackCancellation.Token; IsMacroPlaying = true;
+        MacroAction[] actions;
+        lock (stateLock) actions = macro.ToArray();
+        var owner = playbackCancellation;
         ActionReported?.Invoke(this, "Macro playing"); var previous = TimeSpan.Zero;
         try
         {
-            foreach (var action in macro.ToArray())
+            foreach (var action in actions)
             {
                 await Task.Delay(action.At - previous, token); previous = action.At;
-                if (action.Kind == "move") output.Move(action.A, action.B);
-                else if (action.Kind == "scroll") output.Scroll(action.A);
-                else if (action.Kind == "left") output.SetLeft(action.A != 0);
-                else if (action.Kind == "right") output.SetRight(action.A != 0);
-                else if (action.Kind == "back") output.SetBack(action.A != 0);
+                lock (stateLock)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (action.Kind == "move") output.Move(action.A, action.B);
+                    else if (action.Kind == "scroll") output.Scroll(action.A);
+                    else if (action.Kind == "left") output.SetLeft(action.A != 0);
+                    else if (action.Kind == "right") output.SetRight(action.A != 0);
+                    else if (action.Kind == "back") output.SetBack(action.A != 0);
+                }
             }
         }
         catch (OperationCanceledException) { }
-        finally { output.ReleaseAll(); IsMacroPlaying = false; ActionReported?.Invoke(this, "Macro stopped"); }
+        finally
+        {
+            lock (stateLock)
+            {
+                if (ReferenceEquals(owner, playbackCancellation))
+                {
+                    output.ReleaseAll(); IsMacroPlaying = false;
+                    playbackCancellation = null;
+                    ActionReported?.Invoke(this, "Macro stopped");
+                }
+                owner?.Dispose();
+            }
+        }
     }
 
-    private void StopMacro() { playbackCancellation?.Cancel(); playbackCancellation?.Dispose(); playbackCancellation = null; }
+    private void StopMacro()
+    {
+        lock (stateLock)
+        {
+            playbackCancellation?.Cancel();
+            playbackCancellation = null;
+            IsMacroPlaying = false;
+            output.ReleaseAll();
+        }
+    }
 
     public void Dispose()
     {
@@ -314,8 +372,12 @@ public sealed class MouseTrackpadEngine : IDisposable
             moveY = (int)Math.Round(driveY * speed);
         }
 
-        _ = output.Move(moveX, moveY);
-        Capture("move", moveX, moveY);
+        lock (stateLock)
+        {
+            if (!surfaceActive) return;
+            _ = output.Move(moveX, moveY);
+            Capture("move", moveX, moveY);
+        }
     }
 
     private void ResetTouches()

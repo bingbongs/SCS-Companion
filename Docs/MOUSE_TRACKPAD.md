@@ -23,7 +23,7 @@ The settings cog opens a compact flyout beside the device. Pointer sensitivity r
 | Quick tap on the circular surface | Left click |
 | Upper-left round button (B11) | Left mouse button |
 | Upper-right round button (B12) | Right mouse button |
-| Lower-left round button (B13) | Middle mouse button |
+| Lower-left round button (B13) | Tap to start/finish macro capture; hold 850 ms to erase |
 | Lower-right round button (B14) | Browser Back button |
 
 The center region is intentionally no longer assigned to scrolling. The round mouse buttons preserve press and release, so B11 supports dragging.
@@ -33,3 +33,5 @@ The center region is intentionally no longer assigned to scrolling. The round mo
 The footer routing control must read `MOUSE LIVE` for actions to leave the app. `PAUSED` still permits device observation without moving or clicking the pointer. Safe Stop, mode changes, pause, disconnect, and exit stop continuous movement and release held mouse buttons.
 
 Windows blocks `SendInput` from controlling applications running at a higher integrity level. SCS Companion intentionally runs without administrator privileges, so it will not control an elevated application unless both processes run at the same integrity level.
+
+Macro playback starts after capture or with PLAY. PLAY again stops it. Safe Stop and module changes cancel playback and recording. Capture is bounded to five minutes or 20,000 actions. Macros remain in memory for this application session.
